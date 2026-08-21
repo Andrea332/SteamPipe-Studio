@@ -11,8 +11,7 @@ Steam.
 
 Not affiliated with or endorsed by Valve.
 
-<!-- Add a screenshot of the Upload tab here once you have one: it is the screen that
-     sells the tool, and a GUI project without a screenshot reads as abandoned. -->
+![SteamPipe Studio — the Project tab: name and App ID, content and build-output folders, the Steam account with its optional saved password, and the branch to set live after an upload](docs/showcase.png)
 
 ## What it does
 
