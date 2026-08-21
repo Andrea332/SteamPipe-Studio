@@ -11,16 +11,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- The glob matcher, the path-containment check and the description sanitiser are
-         implementation details, not API — but they are exactly the parts worth testing
-         directly, because their edge cases are where SteamPipe builds go wrong. Opening
-         them to the test assembly beats promoting them to public. -->
-    <InternalsVisibleTo Include="SteamPipeStudio.Tests" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- The de-duplication between steamcmd's console log and its pipe is intricate
-         enough to need tests, and is an implementation detail everywhere else. -->
+    <!-- The glob matcher, the path-containment check, the description sanitiser and the
+         de-duplication between steamcmd's console log and its pipe are implementation
+         details, not API — but they are exactly the parts worth testing directly, because
+         their edge cases are where SteamPipe builds go wrong. Opening them to the test
+         assembly beats promoting them to public. -->
     <InternalsVisibleTo Include="SteamPipeStudio.Tests" />
   </ItemGroup>
 

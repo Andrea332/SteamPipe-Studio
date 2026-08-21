@@ -20,12 +20,15 @@ public sealed record UploadOutcome(
 /// The upload workflow: generate scripts, validate, log in, run the build.
 ///
 /// Credentials policy, and the main reason this is not a straight port of the 2018
-/// tool: the password is never written to disk and never appears on a command line.
-/// steamcmd is always invoked as <c>+login &lt;account&gt;</c>, which makes it either
+/// tool: the password never appears on a command line and never goes into the profile
+/// file. steamcmd is always invoked as <c>+login &lt;account&gt;</c>, which makes it either
 /// reuse the refresh token it cached under its own config folder or prompt on stdin —
-/// and the prompt is answered through <see cref="ISteamCmdPrompt"/>, in memory, once.
-/// A password on the command line would be visible to every other process on the
-/// machine via the process list, and in the original tool it was also persisted in
+/// and the prompt is answered through <see cref="ISteamCmdPrompt"/>, in memory, once per
+/// ask. Whether that answer is typed by the user or read from the platform secret store
+/// (the optional per-account password the App layer keeps under DPAPI, the keychain or
+/// the keyring) is the prompt implementation's business; this class only ever writes it
+/// to stdin. A password on the command line would be visible to every other process on
+/// the machine via the process list, and in the original tool it was also persisted in
 /// clear text in user.config.
 /// </summary>
 public sealed class SteamCmdSession

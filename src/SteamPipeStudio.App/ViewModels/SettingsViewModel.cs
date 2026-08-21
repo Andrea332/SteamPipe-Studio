@@ -112,9 +112,11 @@ public sealed class SettingsViewModel : ViewModelBase
               "readable only by your user account.";
 
     public string PasswordPolicyDescription =>
-        "Your Steam password is never stored and never appears on a command line. steamcmd is " +
-        "started as '+login <account>', so it reuses the session token it caches itself, and " +
-        "asks only when that token has expired.";
+        "Your Steam password is optional. steamcmd is started as '+login <account>', so it " +
+        "reuses the session token it caches itself and asks only when that token has expired; " +
+        "leave the password empty on the Project tab to be asked then. Save it there and it goes " +
+        "into the same encrypted store as the API key above — never into the project file and " +
+        "never onto a command line — and is handed to steamcmd's input only when it asks.";
 
     private void SaveApiKey()
     {
