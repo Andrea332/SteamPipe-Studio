@@ -17,6 +17,36 @@ cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.."
 
 PROJECT="src/SteamPipeStudio.App"
 RIDS=(win-x64 osx-arm64 osx-x64 linux-x64)
+SDK_URL="https://dotnet.microsoft.com/download/dotnet/10.0"
+
+# -----------------------------------------------------------------------------
+# Preflight. The .NET 10 runtime arrives on its own -- bundled with Visual Studio,
+# pushed by Windows Update, pulled in as a distro dependency -- so `dotnet` exists
+# and answers on machines that cannot build this project at all. Without this
+# check the run reaches MSBuild and dies with MSB4236 "the SDK Microsoft.NET.Sdk
+# was not found", an error that mentions neither .NET 10 nor the SDK, and that
+# gets worse when workloads are installed: the workload resolver fails first and
+# hides the real cause.
+#
+# Asking `dotnet --version` is enough: with global.json present it resolves the
+# pinned SDK and fails loudly when nothing matches. The version rule therefore
+# lives in global.json alone and is not restated here, where it would drift.
+# -----------------------------------------------------------------------------
+if ! command -v dotnet >/dev/null 2>&1; then
+    echo "*** dotnet was not found on PATH ***" >&2
+    echo "Install the .NET 10 SDK: $SDK_URL" >&2
+    exit 1
+fi
+
+if ! dotnet --version >/dev/null 2>&1; then
+    echo "*** No installed .NET SDK satisfies global.json ***" >&2
+    echo >&2
+    dotnet --version >&2 || true
+    echo >&2
+    echo "The SDK is required, not the runtime: seeing Microsoft.NETCore.App 10.x" >&2
+    echo "in 'dotnet --info' is not enough to build. Install the SDK from $SDK_URL" >&2
+    exit 1
+fi
 
 echo "Building $PROJECT"
 echo "Targets: ${RIDS[*]}"
