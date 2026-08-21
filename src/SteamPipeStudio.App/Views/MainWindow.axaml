@@ -1,0 +1,488 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="SteamPipeStudio.App.Views.MainWindow"
+        Title="SteamPipe Studio"
+        Width="1180" Height="780"
+        MinWidth="900" MinHeight="620">
+
+  <Window.Styles>
+    <Style Selector="TextBlock.error">
+      <Setter Property="Foreground" Value="{DynamicResource LogError}" />
+    </Style>
+    <Style Selector="TextBlock.warn">
+      <Setter Property="Foreground" Value="{DynamicResource LogWarning}" />
+    </Style>
+    <Style Selector="TextBlock.ok">
+      <Setter Property="Foreground" Value="{DynamicResource LogSuccess}" />
+    </Style>
+    <Style Selector="TextBlock.muted">
+      <Setter Property="Foreground" Value="{DynamicResource LogMuted}" />
+    </Style>
+  </Window.Styles>
+
+  <Grid ColumnDefinitions="260,*" RowDefinitions="*,Auto">
+
+    <!-- ============================ Sidebar ============================ -->
+    <Border Grid.Row="0" Grid.Column="0" Background="{DynamicResource SidebarBackground}">
+      <DockPanel Margin="12">
+
+        <TextBlock DockPanel.Dock="Top" Text="Projects" Classes="h1" />
+
+        <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,12,0,0">
+          <Button Content="New project" Command="{Binding NewProfileCommand}"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+          <Button Content="Import app_build.vdf…" Command="{Binding ImportScriptCommand}"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                  ToolTip.Tip="Read an existing SteamPipe script, including its depot files." />
+          <Grid ColumnDefinitions="*,6,*">
+            <Button Grid.Column="0" Content="Duplicate" Command="{Binding DuplicateProfileCommand}"
+                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <Button Grid.Column="2" Content="Delete" Command="{Binding DeleteProfileCommand}"
+                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+          </Grid>
+        </StackPanel>
+
+        <ListBox ItemsSource="{Binding Profiles}"
+                 SelectedItem="{Binding SelectedProfile, Mode=TwoWay}"
+                 Background="Transparent">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <StackPanel Spacing="2" Margin="0,4">
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding AppIdText, StringFormat='AppID {0}'}" Classes="hint" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+
+      </DockPanel>
+    </Border>
+
+    <!-- ============================ Content ============================ -->
+    <Panel Grid.Row="0" Grid.Column="1">
+
+      <TextBlock Text="Create or import a project to get started."
+                 HorizontalAlignment="Center" VerticalAlignment="Center"
+                 Opacity="0.5"
+                 IsVisible="{Binding !HasProfile}" />
+
+      <TabControl Margin="12,8,12,0" IsVisible="{Binding HasProfile}">
+
+        <!-- ============================ Project ============================ -->
+        <TabItem Header="Project">
+          <ScrollViewer>
+            <StackPanel Margin="4,12,12,12" DataContext="{Binding SelectedProfile}">
+
+              <Border Classes="card">
+                <Grid ColumnDefinitions="150,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+
+                  <TextBlock Grid.Row="0" Grid.Column="0" Text="Project name" Classes="label" />
+                  <TextBox Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,8"
+                           Text="{Binding Name, Mode=TwoWay}" />
+
+                  <TextBlock Grid.Row="1" Grid.Column="0" Text="App ID" Classes="label" />
+                  <TextBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,8"
+                           Text="{Binding AppIdText, Mode=TwoWay}"
+                           Watermark="The App ID assigned in Steamworks" />
+
+                  <TextBlock Grid.Row="2" Grid.Column="0" Text="Build description" Classes="label" />
+                  <TextBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,8"
+                           Text="{Binding Description, Mode=TwoWay}"
+                           Watermark="Shown next to the build in the Steamworks admin panel" />
+
+                  <TextBlock Grid.Row="3" Grid.Column="0" Text="Content folder" Classes="label" />
+                  <TextBox Grid.Row="3" Grid.Column="1" Margin="0,0,8,8"
+                           Text="{Binding ContentRoot, Mode=TwoWay}" />
+                  <Button Grid.Row="3" Grid.Column="2" Content="Browse…" Margin="0,0,0,8"
+                          Command="{Binding $parent[Window].DataContext.BrowseContentRootCommand}" />
+
+                  <TextBlock Grid.Row="4" Grid.Column="0" Text="Build output" Classes="label" />
+                  <TextBox Grid.Row="4" Grid.Column="1" Margin="0,0,8,4"
+                           Text="{Binding BuildOutput, Mode=TwoWay}" />
+                  <Button Grid.Row="4" Grid.Column="2" Content="Browse…" Margin="0,0,0,4"
+                          Command="{Binding $parent[Window].DataContext.BrowseBuildOutputCommand}" />
+
+                  <TextBlock Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2" Classes="hint"
+                             Text="Logs and the chunk cache land here. Keep it outside the content folder, or the cache ends up inside your game." />
+
+                </Grid>
+              </Border>
+
+              <Border Classes="card">
+                <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+
+                  <TextBlock Grid.Row="0" Grid.Column="0" Text="Steam account" Classes="label" />
+                  <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,4"
+                           Text="{Binding SteamAccountName, Mode=TwoWay}"
+                           Watermark="Account with upload rights for this app" />
+
+                  <TextBlock Grid.Row="1" Grid.Column="1" Classes="hint" Margin="0,0,0,10"
+                             Text="No password is stored. steamcmd reuses its own cached session and asks only when it expires." />
+
+                  <TextBlock Grid.Row="2" Grid.Column="0" Text="Set live on branch" Classes="label" />
+                  <TextBox Grid.Row="2" Grid.Column="1" Margin="0,0,0,4"
+                           Text="{Binding SetLiveBranch, Mode=TwoWay}"
+                           Watermark="Leave empty to upload without publishing" />
+
+                  <TextBlock Grid.Row="3" Grid.Column="1" Classes="hint" Margin="0,0,0,10"
+                             Text="Beta branches only. Steam will not let a build script publish to the default branch — use the Builds tab for that." />
+
+                  <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Spacing="20">
+                    <CheckBox Content="Preview build (upload nothing)" IsChecked="{Binding Preview, Mode=TwoWay}" />
+                    <CheckBox Content="Verbose steamcmd output" IsChecked="{Binding Verbose, Mode=TwoWay}" />
+                  </StackPanel>
+
+                </Grid>
+              </Border>
+
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="Save"
+                        Command="{Binding $parent[Window].DataContext.SaveProfileCommand}" />
+                <Button Content="Export .vdf scripts…"
+                        Command="{Binding $parent[Window].DataContext.ExportScriptsCommand}"
+                        ToolTip.Tip="Write the generated app and depot scripts to a folder." />
+                <Button Content="Export GitHub Actions workflow…"
+                        Command="{Binding $parent[Window].DataContext.ExportWorkflowCommand}"
+                        ToolTip.Tip="Produce a CI workflow that performs this same upload." />
+                <TextBlock Text="{Binding LastBuildSummary}" Classes="hint" VerticalAlignment="Center" />
+              </StackPanel>
+
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+
+        <!-- ============================ Depots ============================ -->
+        <TabItem Header="Depots">
+          <DockPanel Margin="4,12,12,12">
+
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
+              <Button Content="Add depot"
+                      Command="{Binding SelectedProfile.AddDepotCommand}" />
+              <TextBlock Classes="hint" VerticalAlignment="Center"
+                         Text="Depot IDs come from the Steamworks admin panel and are usually allocated just above the App ID." />
+            </StackPanel>
+
+            <ScrollViewer>
+              <ItemsControl ItemsSource="{Binding SelectedProfile.Depots}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Expander Header="{Binding Header}" IsExpanded="True" Margin="0,0,0,10"
+                              HorizontalAlignment="Stretch">
+                      <StackPanel Margin="8">
+
+                        <Grid ColumnDefinitions="120,140,16,90,*,Auto" Margin="0,0,0,10">
+                          <TextBlock Grid.Column="0" Text="Depot ID" Classes="label" />
+                          <TextBox  Grid.Column="1" Text="{Binding DepotIdText, Mode=TwoWay}" />
+                          <TextBlock Grid.Column="3" Text="Label" Classes="label" />
+                          <TextBox  Grid.Column="4" Text="{Binding Label, Mode=TwoWay}"
+                                    Watermark="e.g. Windows content" />
+                          <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="8" Margin="12,0,0,0">
+                            <CheckBox Content="Enabled" IsChecked="{Binding Enabled, Mode=TwoWay}"
+                                      VerticalAlignment="Center" />
+                            <Button Content="Remove depot"
+                                    Command="{Binding $parent[Window].DataContext.SelectedProfile.RemoveDepotCommand}"
+                                    CommandParameter="{Binding}" />
+                          </StackPanel>
+                        </Grid>
+
+                        <Grid ColumnDefinitions="120,*" Margin="0,0,0,10">
+                          <TextBlock Grid.Column="0" Text="Content root" Classes="label" />
+                          <TextBox Grid.Column="1" Text="{Binding ContentRootOverride, Mode=TwoWay}"
+                                   Watermark="Optional — overrides the project's content folder for this depot" />
+                        </Grid>
+
+                        <TextBlock Text="File mappings" Classes="h2" />
+                        <TextBlock Classes="hint" Margin="0,0,0,6"
+                                   Text="Local path is relative to the content root and may contain * or ?. Depot path is where the files land inside the installed game; use . for its root." />
+
+                        <ItemsControl ItemsSource="{Binding Mappings}">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                              <Grid ColumnDefinitions="*,8,*,8,Auto,8,Auto" Margin="0,0,0,6">
+                                <TextBox Grid.Column="0" Text="{Binding LocalPath, Mode=TwoWay}"
+                                         Watermark="Local path (e.g. *)" />
+                                <TextBox Grid.Column="2" Text="{Binding DepotPath, Mode=TwoWay}"
+                                         Watermark="Depot path (e.g. .)" />
+                                <CheckBox Grid.Column="4" Content="Recursive"
+                                          IsChecked="{Binding Recursive, Mode=TwoWay}"
+                                          VerticalAlignment="Center" />
+                                <Button Grid.Column="6" Content="✕"
+                                        Command="{Binding $parent[Expander].DataContext.RemoveMappingCommand}"
+                                        CommandParameter="{Binding}" />
+                              </Grid>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <Button Content="Add mapping" Command="{Binding AddMappingCommand}"
+                                HorizontalAlignment="Left" Margin="0,4,0,0" />
+
+                        <TextBlock Text="Exclusions" Classes="h2" />
+                        <TextBlock Classes="hint" Margin="0,0,0,6"
+                                   Text="Patterns removed from this depot at any depth, e.g. *.pdb or bin/tools*." />
+
+                        <ItemsControl ItemsSource="{Binding Exclusions}">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                              <Grid ColumnDefinitions="*,8,Auto" Margin="0,0,0,6">
+                                <TextBox Grid.Column="0" Text="{Binding Value, Mode=TwoWay}"
+                                         Watermark="e.g. *.pdb" />
+                                <Button Grid.Column="2" Content="✕"
+                                        Command="{Binding $parent[Expander].DataContext.RemoveExclusionCommand}"
+                                        CommandParameter="{Binding}" />
+                              </Grid>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <Button Content="Add exclusion" Command="{Binding AddExclusionCommand}"
+                                HorizontalAlignment="Left" Margin="0,4,0,0" />
+
+                        <Grid ColumnDefinitions="120,*" Margin="0,16,0,0">
+                          <TextBlock Grid.Column="0" Text="Install script" Classes="label" />
+                          <TextBox Grid.Column="1" Text="{Binding InstallScript, Mode=TwoWay}"
+                                   Watermark="Optional — path to an install script VDF inside the content root" />
+                        </Grid>
+
+                      </StackPanel>
+                    </Expander>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+
+          </DockPanel>
+        </TabItem>
+
+        <!-- ============================ Upload ============================ -->
+        <TabItem Header="Upload">
+          <DockPanel Margin="4,12,12,12" DataContext="{Binding Upload}">
+
+            <StackPanel DockPanel.Dock="Top" Spacing="10">
+
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="Preview contents" Command="{Binding PreflightCommand}"
+                        ToolTip.Tip="Resolve the file mappings against disk and show what would be uploaded." />
+                <Button Content="Upload build" Command="{Binding UploadCommand}" Classes="accent" />
+                <Button Content="Cancel" Command="{Binding CancelCommand}" />
+                <Button Content="Open build log" Command="{Binding OpenLogCommand}" />
+                <Button Content="Clear log" Command="{Binding ClearLogCommand}" />
+              </StackPanel>
+
+              <ItemsControl ItemsSource="{Binding Issues}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border CornerRadius="8" Padding="10" Margin="0,0,0,6"
+                            Classes.iserror="{Binding IsError}"
+                            Classes.iswarning="{Binding IsWarning}"
+                            Classes.isinfo="{Binding IsInfo}">
+                      <StackPanel>
+                        <TextBlock FontWeight="SemiBold" Text="{Binding Field}" />
+                        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Classes="hint" />
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <StackPanel IsVisible="{Binding PreflightSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                          Spacing="4">
+                <TextBlock Text="{Binding PreflightSummary}" FontWeight="SemiBold" />
+                <ItemsControl ItemsSource="{Binding PreflightDepots}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Expander Margin="0,4,0,0" HorizontalAlignment="Stretch"
+                                Header="{Binding Summary}">
+                        <StackPanel Margin="8" Spacing="4">
+                          <ItemsControl ItemsSource="{Binding Notes}">
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate>
+                                <TextBlock Text="{Binding}" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource LogWarning}" />
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                          <TextBlock Text="Largest files" Classes="h2" />
+                          <ItemsControl ItemsSource="{Binding LargestFiles}">
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate>
+                                <TextBlock Text="{Binding}" FontFamily="Consolas,Menlo,monospace" FontSize="12" />
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                        </StackPanel>
+                      </Expander>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+
+              <StackPanel Spacing="4">
+                <ProgressBar Minimum="0" Maximum="100"
+                             Value="{Binding Progress, Mode=OneWay}"
+                             IsIndeterminate="{Binding IsIndeterminate}"
+                             Height="6" />
+                <TextBlock Text="{Binding Phase}" Classes="hint" />
+              </StackPanel>
+
+            </StackPanel>
+
+            <!-- A ListBox, not an ItemsControl: it virtualises. An ItemsControl inside a
+                 ScrollViewer is measured with infinite height, so all 5000 retained log
+                 lines become live TextBlocks and a long upload freezes the window.
+                 No local Foreground here either — a locally set value outranks every
+                 style, so the severity classes below could never colour anything. -->
+            <Border Margin="0,12,0,0" CornerRadius="6" Padding="4"
+                    Background="{DynamicResource LogBackground}">
+              <ListBox x:Name="LogList"
+                       ItemsSource="{Binding Log}"
+                       Background="Transparent"
+                       BorderThickness="0"
+                       ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                <ListBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding Text}"
+                               FontFamily="Consolas,Menlo,monospace"
+                               FontSize="12"
+                               TextWrapping="NoWrap"
+                               Classes.error="{Binding IsError}"
+                               Classes.warn="{Binding IsWarning}"
+                               Classes.ok="{Binding IsSuccess}"
+                               Classes.muted="{Binding IsMuted}" />
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </Border>
+
+          </DockPanel>
+        </TabItem>
+
+        <!-- ============================ Builds ============================ -->
+        <TabItem Header="Builds">
+          <DockPanel Margin="4,12,12,12" DataContext="{Binding Builds}">
+
+            <StackPanel DockPanel.Dock="Top" Spacing="10">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="Refresh from Steam" Command="{Binding RefreshCommand}" />
+                <ComboBox ItemsSource="{Binding Branches}"
+                          SelectedItem="{Binding SelectedBranch, Mode=TwoWay}"
+                          MinWidth="200"
+                          PlaceholderText="Branch">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Text="{Binding Name}" />
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+                <TextBox Text="{Binding SetLiveDescription, Mode=TwoWay}" MinWidth="220"
+                         Watermark="Optional note for the branch change" />
+                <Button Content="Set selected build live" Command="{Binding SetLiveCommand}" />
+              </StackPanel>
+              <TextBlock Text="{Binding Status}" Classes="hint" />
+            </StackPanel>
+
+            <Border Margin="0,12,0,0">
+              <DockPanel>
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="110,170,160,*" Margin="8,0,8,6">
+                  <TextBlock Grid.Column="0" Text="Build" FontWeight="SemiBold" />
+                  <TextBlock Grid.Column="1" Text="Created" FontWeight="SemiBold" />
+                  <TextBlock Grid.Column="2" Text="Live on" FontWeight="SemiBold" />
+                  <TextBlock Grid.Column="3" Text="Description" FontWeight="SemiBold" />
+                </Grid>
+
+                <ListBox ItemsSource="{Binding Builds}"
+                         SelectedItem="{Binding SelectedBuild, Mode=TwoWay}">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate>
+                      <Grid ColumnDefinitions="110,170,160,*">
+                        <TextBlock Grid.Column="0" Text="{Binding BuildId}"
+                                   FontFamily="Consolas,Menlo,monospace" />
+                        <TextBlock Grid.Column="1" Text="{Binding Created}" />
+                        <TextBlock Grid.Column="2" Text="{Binding LiveOn}" />
+                        <TextBlock Grid.Column="3" Text="{Binding Description}"
+                                   TextTrimming="CharacterEllipsis" />
+                      </Grid>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </DockPanel>
+            </Border>
+
+          </DockPanel>
+        </TabItem>
+
+        <!-- ============================ Settings ============================ -->
+        <TabItem Header="Settings">
+          <ScrollViewer>
+            <StackPanel Margin="4,12,12,12" DataContext="{Binding Settings}">
+
+              <Border Classes="card">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="Steamworks SDK" Classes="h1" />
+                  <Grid ColumnDefinitions="*,8,Auto">
+                    <TextBox Grid.Column="0"
+                             Text="{Binding ContentBuilderPath, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                             Watermark="…/sdk/tools/ContentBuilder" />
+                    <Button Grid.Column="2" Content="Browse…"
+                            Command="{Binding BrowseContentBuilderCommand}" />
+                  </Grid>
+                  <TextBlock Text="{Binding SteamCmdStatus}" Classes="hint" />
+                </StackPanel>
+              </Border>
+
+              <Border Classes="card">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="Publisher Web API key" Classes="h1" />
+                  <TextBlock Classes="hint"
+                             Text="Needed only for the Builds tab: reading build history and promoting a build to a branch. Create one in Steamworks under Users &amp; Permissions → Manage Groups." />
+                  <Grid ColumnDefinitions="*,8,Auto,8,Auto">
+                    <TextBox Grid.Column="0" Text="{Binding ApiKeyInput, Mode=TwoWay}"
+                             PasswordChar="•" Watermark="Paste the key to replace the stored one" />
+                    <Button Grid.Column="2" Content="Save" Command="{Binding SaveApiKeyCommand}" />
+                    <Button Grid.Column="4" Content="Remove" Command="{Binding ClearApiKeyCommand}" />
+                  </Grid>
+                  <TextBlock Classes="hint" Text="{Binding SecretStorageDescription}" />
+                  <TextBlock Classes="hint" Text="{Binding Status}" />
+                </StackPanel>
+              </Border>
+
+              <Border Classes="card">
+                <StackPanel Spacing="8">
+                  <TextBlock Text="Credentials" Classes="h1" />
+                  <TextBlock Classes="hint" TextWrapping="Wrap"
+                             Text="{Binding PasswordPolicyDescription}" />
+                </StackPanel>
+              </Border>
+
+              <Border Classes="card">
+                <StackPanel Spacing="8">
+                  <TextBlock Text="Behaviour" Classes="h1" />
+                  <CheckBox Content="Dark theme" IsChecked="{Binding DarkTheme, Mode=TwoWay}" />
+                  <CheckBox Content="Confirm before setting a build live"
+                            IsChecked="{Binding ConfirmSetLive, Mode=TwoWay}" />
+                  <TextBlock Classes="hint"
+                             Text="Publishing to the default branch always asks, whatever this is set to." />
+                </StackPanel>
+              </Border>
+
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+
+      </TabControl>
+    </Panel>
+
+    <!-- ============================ Status bar ============================ -->
+    <Border Grid.Row="1" Grid.ColumnSpan="2" Padding="12,8"
+            Background="{DynamicResource SidebarBackground}">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Grid.Column="0" Text="{Binding Status}" TextTrimming="CharacterEllipsis" />
+        <TextBlock Grid.Column="1" Text="{Binding Upload.Status}" Classes="hint"
+                   TextTrimming="CharacterEllipsis" MaxWidth="520" />
+      </Grid>
+    </Border>
+
+  </Grid>
+
+
+</Window>

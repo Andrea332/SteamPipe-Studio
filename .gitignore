@@ -1,0 +1,72 @@
+# ---------------------------------------------------------------------------
+# Build output
+# ---------------------------------------------------------------------------
+bin/
+obj/
+artifacts/
+publish/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.cache
+*.binlog
+
+# ---------------------------------------------------------------------------
+# IDE and editor state
+# ---------------------------------------------------------------------------
+.vs/
+.vscode/
+.idea/
+_ReSharper*/
+*.user
+*.suo
+*.userprefs
+*.sln.docstates
+*.DotSettings.user
+
+# ---------------------------------------------------------------------------
+# NuGet
+# ---------------------------------------------------------------------------
+*.nupkg
+*.snupkg
+packages/
+!packages/build/
+.nuget/
+
+# ---------------------------------------------------------------------------
+# SteamPipe leftovers
+#
+# The two folders below are why this section exists. Someone will eventually
+# point Build output at a folder inside the repository, and a depot chunk cache
+# is hundreds of megabytes of binary that must never reach a commit. Generated
+# build scripts are ignored by default too — they are derived from a profile,
+# not authored — but a project that wants its scripts under version control
+# should un-ignore them deliberately rather than by accident.
+# ---------------------------------------------------------------------------
+BuildOutput/
+ContentBuilder/output/
+*.csd
+*.csm
+depot_*_*.manifest
+scripts/app_build_*.vdf
+scripts/depot_build_*.vdf
+
+# Never commit a steamcmd session: config.vdf holds a live refresh token that
+# grants upload rights to the account.
+config.vdf
+ssfn*
+steam_tokens.json
+
+# ---------------------------------------------------------------------------
+# OS noise
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini

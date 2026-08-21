@@ -1,0 +1,25 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- Centralised so the three projects cannot drift apart. .NET 10 is the current
+         LTS; nothing in the code needs a specific version, so retargeting later is a
+         one-line change here. -->
+    <TargetFramework>net10.0</TargetFramework>
+
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- One knob for every Avalonia package, so a version bump is a single edit.
+         11.3.x is the maintained 11 line and is what this code is written against.
+         Avalonia 12 exists and is the future, but it renames APIs and drops obsolete
+         ones; move to it as its own deliberate step, not on the same day as the first
+         compile. -->
+    <AvaloniaVersion>11.3.20</AvaloniaVersion>
+  </PropertyGroup>
+
+</Project>

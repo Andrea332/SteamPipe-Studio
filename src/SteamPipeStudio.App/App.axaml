@@ -1,0 +1,98 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="SteamPipeStudio.App.App"
+             RequestedThemeVariant="Dark">
+
+  <Application.Styles>
+    <FluentTheme />
+
+    <Style Selector="TextBlock.h1">
+      <Setter Property="FontSize" Value="20" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,0,0,4" />
+    </Style>
+
+    <Style Selector="TextBlock.h2">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,16,0,6" />
+    </Style>
+
+    <Style Selector="TextBlock.hint">
+      <Setter Property="Opacity" Value="0.65" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <Style Selector="TextBlock.label">
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,0,12,0" />
+    </Style>
+
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="{DynamicResource CardBackground}" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="16" />
+      <Setter Property="Margin" Value="0,0,0,12" />
+    </Style>
+
+    <Style Selector="Border.iserror">
+      <Setter Property="Background" Value="#3A1A1C" />
+    </Style>
+    <Style Selector="Border.iswarning">
+      <Setter Property="Background" Value="#3A311A" />
+    </Style>
+    <Style Selector="Border.isinfo">
+      <Setter Property="Background" Value="#1A2A3A" />
+    </Style>
+
+    <Style Selector="TextBox">
+      <Setter Property="MinWidth" Value="120" />
+    </Style>
+  </Application.Styles>
+
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+
+        <!-- Default mirrors Dark. Without it, a theme variant left at Default would
+             leave every DynamicResource below unresolved and the app would render
+             with transparent cards. -->
+        <ResourceDictionary x:Key="Default">
+          <SolidColorBrush x:Key="CardBackground" Color="#22262B" />
+          <SolidColorBrush x:Key="SidebarBackground" Color="#181B1F" />
+          <SolidColorBrush x:Key="LogBackground" Color="#111417" />
+          <SolidColorBrush x:Key="LogError" Color="#FF7B72" />
+          <SolidColorBrush x:Key="LogWarning" Color="#E3B341" />
+          <SolidColorBrush x:Key="LogSuccess" Color="#7EE787" />
+          <SolidColorBrush x:Key="LogMuted" Color="#6E7681" />
+          <SolidColorBrush x:Key="Accent" Color="#4C8EDA" />
+        </ResourceDictionary>
+
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="CardBackground" Color="#22262B" />
+          <SolidColorBrush x:Key="SidebarBackground" Color="#181B1F" />
+          <SolidColorBrush x:Key="LogBackground" Color="#111417" />
+          <SolidColorBrush x:Key="LogError" Color="#FF7B72" />
+          <SolidColorBrush x:Key="LogWarning" Color="#E3B341" />
+          <SolidColorBrush x:Key="LogSuccess" Color="#7EE787" />
+          <SolidColorBrush x:Key="LogMuted" Color="#6E7681" />
+          <SolidColorBrush x:Key="Accent" Color="#4C8EDA" />
+        </ResourceDictionary>
+
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="CardBackground" Color="#F2F4F7" />
+          <SolidColorBrush x:Key="SidebarBackground" Color="#E8EBEF" />
+          <SolidColorBrush x:Key="LogBackground" Color="#FBFBFC" />
+          <SolidColorBrush x:Key="LogError" Color="#B62324" />
+          <SolidColorBrush x:Key="LogWarning" Color="#8A6100" />
+          <SolidColorBrush x:Key="LogSuccess" Color="#1A7F37" />
+          <SolidColorBrush x:Key="LogMuted" Color="#6E7781" />
+          <SolidColorBrush x:Key="Accent" Color="#2A6FBF" />
+        </ResourceDictionary>
+
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+
+</Application>

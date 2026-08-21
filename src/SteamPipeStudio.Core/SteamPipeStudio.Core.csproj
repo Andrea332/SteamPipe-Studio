@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- TargetFramework, Nullable and LangVersion come from Directory.Build.props. -->
+
+  <PropertyGroup>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <!-- No PackageReference by design: everything here is BCL only, so the build
+         logic can be reused from a CLI, a test harness or a CI task without
+         dragging a UI framework along. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The glob matcher, the path-containment check and the description sanitiser are
+         implementation details, not API — but they are exactly the parts worth testing
+         directly, because their edge cases are where SteamPipe builds go wrong. Opening
+         them to the test assembly beats promoting them to public. -->
+    <InternalsVisibleTo Include="SteamPipeStudio.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,24 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="SteamPipeStudio.App.Views.PromptWindow"
+        Width="460"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        Title="SteamPipe Studio">
+
+  <StackPanel Margin="24" Spacing="12">
+    <TextBlock x:Name="TitleText" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+    <TextBlock x:Name="MessageText" TextWrapping="Wrap" Opacity="0.8" />
+
+    <TextBox x:Name="InputBox" Watermark="" />
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,8,0,0">
+      <Button x:Name="CancelButton" Content="Cancel" Click="OnCancel" MinWidth="90" />
+      <Button x:Name="OkButton" Content="OK" Click="OnConfirm" MinWidth="90"
+              IsDefault="True" Classes="accent" />
+    </StackPanel>
+  </StackPanel>
+
+</Window>
