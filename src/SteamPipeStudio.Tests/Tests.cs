@@ -445,6 +445,14 @@ internal static class Program
         Harness.Equal("success detected", SteamCmdEventKind.BuildSucceeded, success.Kind);
         Harness.Equal("build id extracted", 12345678u, success.BuildId);
 
+        // SDK 1.63 dropped the dash, moved the build id into brackets and prefixed the
+        // line with a timestamp. Missing this shape reports a finished upload as a
+        // failure, which is the worst thing this parser can do.
+        var timestamped = SteamCmdOutputParser.Parse(
+            "[2026-08-21 15:06:42]: Successfully finished AppID 4370990 build (BuildID 24862532).");
+        Harness.Equal("SDK 1.63 success detected", SteamCmdEventKind.BuildSucceeded, timestamped.Kind);
+        Harness.Equal("SDK 1.63 build id extracted", 24862532u, timestamped.BuildId);
+
         var guard = SteamCmdOutputParser.Parse("Steam Guard code:");
         Harness.Equal("steam guard prompt", SteamCmdEventKind.SteamGuardPrompt, guard.Kind);
 

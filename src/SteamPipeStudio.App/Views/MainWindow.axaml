@@ -266,6 +266,8 @@
                 <Button Content="Upload build" Command="{Binding UploadCommand}" Classes="accent" />
                 <Button Content="Cancel" Command="{Binding CancelCommand}" />
                 <Button Content="Open build log" Command="{Binding OpenLogCommand}" />
+                <Button Content="Copy log" Command="{Binding CopyLogCommand}"
+                        ToolTip.Tip="Copy the whole panel below. Select lines and press Ctrl+C to copy only those." />
                 <Button Content="Clear log" Command="{Binding ClearLogCommand}" />
               </StackPanel>
 
@@ -338,7 +340,17 @@
                        ItemsSource="{Binding Log}"
                        Background="Transparent"
                        BorderThickness="0"
+                       SelectionMode="Multiple"
+                       KeyDown="OnLogKeyDown"
                        ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                <ListBox.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem Header="Copy selected lines" InputGesture="Ctrl+C" Click="OnCopyLogSelection" />
+                    <MenuItem Header="Copy whole log" Command="{Binding CopyLogCommand}" />
+                    <Separator />
+                    <MenuItem Header="Clear log" Command="{Binding ClearLogCommand}" />
+                  </ContextMenu>
+                </ListBox.ContextMenu>
                 <ListBox.ItemTemplate>
                   <DataTemplate>
                     <TextBlock Text="{Binding Text}"

@@ -32,7 +32,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         Profiles = new ObservableCollection<ProfileViewModel>(
             store.LoadProfiles().Select(p => new ProfileViewModel(p)));
 
-        Upload = new UploadViewModel(() => SelectedProfile, () => _settings, _prompt, OnUploadSucceeded);
+        Upload = new UploadViewModel(() => SelectedProfile, () => _settings, _prompt, OnUploadSucceeded,
+                                     _prompt.CopyToClipboardAsync);
         Builds = new BuildsViewModel(() => SelectedProfile, () => _settings, _secrets, _prompt.ConfirmAsync);
         Settings = new SettingsViewModel(_settings, store, _secrets,
             title => _prompt.PickFolderAsync(title, _settings.ContentBuilderPath));

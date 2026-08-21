@@ -59,6 +59,7 @@ public sealed class UploadViewModel : ViewModelBase
     private readonly Func<AppSettings> _settings;
     private readonly ISteamCmdPrompt _prompt;
     private readonly Action<BuildProfile> _onUploadSucceeded;
+    private readonly Func<string, Task<bool>> _copyToClipboard;
 
     private CancellationTokenSource? _cancellation;
     private string _status = "Idle.";
@@ -73,21 +74,25 @@ public sealed class UploadViewModel : ViewModelBase
         Func<ProfileViewModel?> currentProfile,
         Func<AppSettings> settings,
         ISteamCmdPrompt prompt,
-        Action<BuildProfile> onUploadSucceeded)
+        Action<BuildProfile> onUploadSucceeded,
+        Func<string, Task<bool>> copyToClipboard)
     {
         _currentProfile = currentProfile;
         _settings = settings;
         _prompt = prompt;
         _onUploadSucceeded = onUploadSucceeded;
+        _copyToClipboard = copyToClipboard;
 
         UploadCommand = new AsyncRelayCommand(UploadAsync, () => !IsRunning);
         PreflightCommand = new AsyncRelayCommand(PreflightAsync, () => !IsRunning);
         CancelCommand = new RelayCommand(Cancel, () => IsRunning);
         ClearLogCommand = new RelayCommand(() => Log.Clear());
         OpenLogCommand = new RelayCommand(OpenLatestLog, () => _lastLogPath is not null);
+        CopyLogCommand = new AsyncRelayCommand(() => CopyToClipboardAsync(null));
 
         UploadCommand.Faulted += e => Fail(e.Message);
         PreflightCommand.Faulted += e => Fail(e.Message);
+        CopyLogCommand.Faulted += e => Status = e.Message;
     }
 
     public ObservableCollection<LogLineViewModel> Log { get; } = new();
@@ -99,6 +104,7 @@ public sealed class UploadViewModel : ViewModelBase
     public RelayCommand CancelCommand { get; }
     public RelayCommand ClearLogCommand { get; }
     public RelayCommand OpenLogCommand { get; }
+    public AsyncRelayCommand CopyLogCommand { get; }
 
     public string Status { get => _status; private set => SetProperty(ref _status, value); }
     public string Phase { get => _phase; private set => SetProperty(ref _phase, value); }
@@ -322,6 +328,38 @@ public sealed class UploadViewModel : ViewModelBase
         {
             Status = $"Could not open {_lastLogPath}.";
         }
+    }
+
+    /// <summary>
+    /// Copies <paramref name="lines"/>, or the whole log when nothing is selected, as
+    /// plain text. The panel is the only place a failure explanation exists — nothing
+    /// writes it to disk — so getting it out of the window and into a bug report has to
+    /// be one click.
+    /// </summary>
+    public async Task CopyToClipboardAsync(IEnumerable<LogLineViewModel>? lines)
+    {
+        List<LogLineViewModel> chosen;
+
+        if (lines is null)
+        {
+            chosen = Log.ToList();
+        }
+        else
+        {
+            // Selection order is the order the user clicked in, which is not the order
+            // the lines were logged in; filtering the log itself restores it. Reference
+            // identity is the right comparison here — two runs can emit the same text.
+            var selected = new HashSet<LogLineViewModel>(lines);
+            chosen = Log.Where(selected.Contains).ToList();
+        }
+
+        if (chosen.Count == 0) { Status = "There is nothing in the log to copy."; return; }
+
+        var text = string.Join(Environment.NewLine, chosen.Select(l => l.Text));
+
+        Status = await _copyToClipboard(text).ConfigureAwait(true)
+            ? $"Copied {chosen.Count} log line{(chosen.Count == 1 ? string.Empty : "s")} to the clipboard."
+            : "No clipboard is available on this system.";
     }
 }
 

@@ -1,6 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.Linq;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
 using SteamPipeStudio.App.ViewModels;
 
@@ -62,5 +66,34 @@ public partial class MainWindow : Window
             var list = this.FindControl<ListBox>("LogList");
             if (list is { ItemCount: > 0 }) list.ScrollIntoView(list.ItemCount - 1);
         }, DispatcherPriority.Background);
+    }
+
+    /// <summary>
+    /// Ctrl+C over the log copies the selected lines, or the whole log when nothing is
+    /// selected — which is what the shortcut does in every console the user came from.
+    /// </summary>
+    private void OnLogKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.C || !e.KeyModifiers.HasFlag(KeyModifiers.Control)) return;
+
+        CopyLogSelection();
+        e.Handled = true;
+    }
+
+    private void OnCopyLogSelection(object? sender, RoutedEventArgs e) => CopyLogSelection();
+
+    private void CopyLogSelection()
+    {
+        if (DataContext is not MainWindowViewModel viewModel) return;
+
+        var selected = this.FindControl<ListBox>("LogList")?.SelectedItems?
+                           .OfType<LogLineViewModel>()
+                           .ToList();
+
+        // Fire and forget: the view model puts both the success and the "no clipboard
+        // here" case into the status line, so there is no result worth awaiting and a
+        // key press must not block the UI thread on a platform clipboard call.
+        _ = viewModel.Upload.CopyToClipboardAsync(
+            selected is { Count: > 0 } ? selected : (IEnumerable<LogLineViewModel>?)null);
     }
 }

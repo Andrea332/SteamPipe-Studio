@@ -44,9 +44,20 @@ public static class SteamCmdOutputParser
     private const RegexOptions Options =
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled;
 
-    // "Successfully finished appID 480 - build 12345678"
+    // The build-finished line. Valve has reworded it between SDK releases and both
+    // shapes are in the wild:
+    //   "Successfully finished appID 480 - build 12345678"           (older builders)
+    //   "Successfully finished AppID 480 build (BuildID 12345678)."  (SDK 1.63)
+    // Only "successfully finished appID <n>" is required here, because getting this
+    // wrong is expensive: an unrecognised line makes a perfectly good upload report
+    // itself as "steamcmd exited cleanly but never reported a finished build".
     private static readonly Regex BuildSucceeded = new(
-        @"success(?:fully)?\s+finished\s+app\s*id\s*(?<app>\d+)\s*-\s*build\s*(?<build>\d+)", Options);
+        @"success(?:fully)?\s+finished\s+app\s*id\s*(?<app>\d+)(?<tail>.*)", Options);
+
+    // The build id off the tail of that line. Both wordings end with it — "- build
+    // 12345678" and "(BuildID 12345678)." — so it is read from the end rather than
+    // matched against a fixed label.
+    private static readonly Regex TrailingBuildId = new(@"(?<build>\d{4,})\D*$", Options);
 
     // Some SDK builds print: "Uploading build ... BuildID 12345678"
     private static readonly Regex BuildIdOnly = new(
@@ -96,8 +107,13 @@ public static class SteamCmdOutputParser
 
         var success = BuildSucceeded.Match(trimmed);
         if (success.Success)
+        {
+            // A wording this parser cannot mine a build id out of is still a success;
+            // the run is reported as finished, just without a number.
+            var finished = TrailingBuildId.Match(success.Groups["tail"].Value);
             return new SteamCmdEvent(SteamCmdEventKind.BuildSucceeded, line,
-                BuildId: ParseUInt(success.Groups["build"].Value));
+                BuildId: finished.Success ? ParseUInt(finished.Groups["build"].Value) : null);
+        }
 
         if (BuildFailed.IsMatch(trimmed))
             return new SteamCmdEvent(SteamCmdEventKind.BuildFailed, line, Detail: trimmed);

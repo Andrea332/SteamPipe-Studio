@@ -44,6 +44,21 @@ public sealed class UiPrompt : ISteamCmdPrompt
         OnUiThread(() => PromptWindow.ConfirmAsync(_owner, title, message));
 
     /// <summary>
+    /// Puts text on the system clipboard. Returns false when there is no clipboard to
+    /// write to — a headless run, or an X11 session with no selection owner — which is
+    /// worth a status line and not an exception.
+    /// </summary>
+    public Task<bool> CopyToClipboardAsync(string text) =>
+        OnUiThread(async () =>
+        {
+            var clipboard = TopLevel.GetTopLevel(_owner)?.Clipboard;
+            if (clipboard is null) return false;
+
+            await clipboard.SetTextAsync(text);
+            return true;
+        });
+
+    /// <summary>
     /// Marshals an async UI operation onto the UI thread and hands the caller a task it
     /// can await from wherever it is. Written against <c>Post</c> plus a completion
     /// source rather than an <c>InvokeAsync</c> overload, because the overload that
