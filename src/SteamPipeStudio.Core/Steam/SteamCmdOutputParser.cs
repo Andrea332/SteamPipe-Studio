@@ -75,6 +75,13 @@ public static class SteamCmdOutputParser
     private static readonly Regex LoggingIn = new(
         @"Logging\s+in\s+user\s+'(?<user>[^']*)'", Options);
 
+    // "Logging in user 'x' [U:1:0] to Steam Public...ERROR (Invalid Password)". The
+    // result is appended to the same line that announces the attempt, so without this the
+    // LoggingIn pattern above claims the line first and a rejected login is reported as
+    // routine chatter — leaving the user with a bare exit code instead of the reason.
+    private static readonly Regex LoginResultFailed = new(
+        @"to\s+Steam\s+\S+\s*\.{2,}\s*(?:ERROR|FAILED)\s*\(?\s*(?<reason>[^)\r\n]*)", Options);
+
     private static readonly Regex SteamGuard = new(
         @"(?:Steam\s*Guard|Two-?factor)\s*code|please\s+check\s+your\s+email|mobile\s+authenticator", Options);
 
@@ -123,6 +130,15 @@ public static class SteamCmdOutputParser
 
         if (PasswordPrompt.IsMatch(trimmed))
             return new SteamCmdEvent(SteamCmdEventKind.LoginPrompt, line);
+
+        // Before LoggingIn, which would otherwise swallow the whole line including its
+        // verdict.
+        var loginResult = LoginResultFailed.Match(trimmed);
+        if (loginResult.Success)
+            return new SteamCmdEvent(SteamCmdEventKind.LoginFailed, line,
+                Detail: loginResult.Groups["reason"].Value.Trim() is { Length: > 0 } reason
+                    ? reason
+                    : trimmed);
 
         var loggingIn = LoggingIn.Match(trimmed);
         if (loggingIn.Success)

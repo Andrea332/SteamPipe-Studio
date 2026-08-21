@@ -109,25 +109,40 @@
               </Border>
 
               <Border Classes="card">
-                <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+                <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
 
                   <TextBlock Grid.Row="0" Grid.Column="0" Text="Steam account" Classes="label" />
                   <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,4"
                            Text="{Binding SteamAccountName, Mode=TwoWay}"
                            Watermark="Account with upload rights for this app" />
 
-                  <TextBlock Grid.Row="1" Grid.Column="1" Classes="hint" Margin="0,0,0,10"
-                             Text="No password is stored. steamcmd reuses its own cached session and asks only when it expires." />
+                  <TextBlock Grid.Row="1" Grid.Column="0" Text="Password" Classes="label" />
+                  <Grid Grid.Row="1" Grid.Column="1" ColumnDefinitions="*,8,Auto,8,Auto" Margin="0,0,0,4">
+                    <TextBox Grid.Column="0" PasswordChar="•"
+                             Text="{Binding PasswordInput, Mode=TwoWay}"
+                             Watermark="Optional — leave empty to be asked when needed" />
+                    <Button Grid.Column="2" Content="Save" Command="{Binding SavePasswordCommand}" />
+                    <Button Grid.Column="4" Content="Remove" Command="{Binding ClearPasswordCommand}" />
+                  </Grid>
 
-                  <TextBlock Grid.Row="2" Grid.Column="0" Text="Set live on branch" Classes="label" />
-                  <TextBox Grid.Row="2" Grid.Column="1" Margin="0,0,0,4"
+                  <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                    <TextBlock Classes="hint" Text="{Binding PasswordSummary}" />
+                    <TextBlock Classes="hint" Text="{Binding PasswordStatus}"
+                               Foreground="{DynamicResource LogSuccess}"
+                               IsVisible="{Binding PasswordStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                  </StackPanel>
+                  <TextBlock Grid.Row="3" Grid.Column="1" Classes="hint" Margin="0,0,0,10"
+                             Text="Never written to the project file and never put on a command line: it goes to the same encrypted store as the API key, and is handed to steamcmd's input only when it asks." />
+
+                  <TextBlock Grid.Row="4" Grid.Column="0" Text="Set live on branch" Classes="label" />
+                  <TextBox Grid.Row="4" Grid.Column="1" Margin="0,0,0,4"
                            Text="{Binding SetLiveBranch, Mode=TwoWay}"
                            Watermark="Leave empty to upload without publishing" />
 
-                  <TextBlock Grid.Row="3" Grid.Column="1" Classes="hint" Margin="0,0,0,10"
+                  <TextBlock Grid.Row="5" Grid.Column="1" Classes="hint" Margin="0,0,0,10"
                              Text="Beta branches only. Steam will not let a build script publish to the default branch — use the Builds tab for that." />
 
-                  <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Spacing="20">
+                  <StackPanel Grid.Row="6" Grid.Column="1" Orientation="Horizontal" Spacing="20">
                     <CheckBox Content="Preview build (upload nothing)" IsChecked="{Binding Preview, Mode=TwoWay}" />
                     <CheckBox Content="Verbose steamcmd output" IsChecked="{Binding Verbose, Mode=TwoWay}" />
                   </StackPanel>

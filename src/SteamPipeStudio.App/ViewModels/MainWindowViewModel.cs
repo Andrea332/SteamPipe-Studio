@@ -30,10 +30,10 @@ public sealed class MainWindowViewModel : ViewModelBase
         _secrets = SecretStoreFactory.Create(store.RootDirectory);
 
         Profiles = new ObservableCollection<ProfileViewModel>(
-            store.LoadProfiles().Select(p => new ProfileViewModel(p)));
+            store.LoadProfiles().Select(p => new ProfileViewModel(p, _secrets)));
 
         Upload = new UploadViewModel(() => SelectedProfile, () => _settings, _prompt, OnUploadSucceeded,
-                                     _prompt.CopyToClipboardAsync);
+                                     _prompt.CopyToClipboardAsync, _secrets);
         Builds = new BuildsViewModel(() => SelectedProfile, () => _settings, _secrets, _prompt.ConfirmAsync);
         Settings = new SettingsViewModel(_settings, store, _secrets,
             title => _prompt.PickFolderAsync(title, _settings.ContentBuilderPath));
@@ -126,7 +126,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             SteamAccountName = _settings.LastSteamAccountName
         };
 
-        var viewModel = new ProfileViewModel(profile);
+        var viewModel = new ProfileViewModel(profile, _secrets);
         Profiles.Add(viewModel);
         SelectedProfile = viewModel;
         Persist(viewModel);
@@ -144,7 +144,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         copy.LastBuildId = null;
         copy.LastUploadedUtc = null;
 
-        var viewModel = new ProfileViewModel(copy);
+        var viewModel = new ProfileViewModel(copy, _secrets);
         Profiles.Add(viewModel);
         SelectedProfile = viewModel;
         Persist(viewModel);
@@ -190,7 +190,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         var profile = BuildScriptGenerator.ImportAppScript(path);
         profile.SteamAccountName = _settings.LastSteamAccountName;
 
-        var viewModel = new ProfileViewModel(profile);
+        var viewModel = new ProfileViewModel(profile, _secrets);
         Profiles.Add(viewModel);
         SelectedProfile = viewModel;
         Persist(viewModel);

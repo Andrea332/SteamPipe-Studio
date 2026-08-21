@@ -5,6 +5,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
 using SteamPipeStudio.Core.Model;
+using SteamPipeStudio.Core.Security;
 
 namespace SteamPipeStudio.App.ViewModels;
 
@@ -202,15 +203,24 @@ public sealed class DepotViewModel : ViewModelBase
 public sealed class ProfileViewModel : ViewModelBase
 {
     private readonly BuildProfile _model;
+    private readonly ISecretStore _secrets;
     private readonly List<DepotViewModel> _subscribedDepots = new();
     private bool _isDirty;
+    private string _passwordInput = string.Empty;
+    private string _passwordStatus = string.Empty;
 
-    public ProfileViewModel(BuildProfile model)
+    public ProfileViewModel(BuildProfile model, ISecretStore secrets)
     {
         _model = model;
+        _secrets = secrets;
         Depots = new ObservableCollection<DepotViewModel>(model.Depots.Select(d => new DepotViewModel(d)));
         ResyncDepotSubscriptions();
         Depots.CollectionChanged += OnDepotsChanged;
+
+        SavePasswordCommand = new RelayCommand(SavePassword);
+        ClearPasswordCommand = new RelayCommand(ClearPassword, () => HasStoredPassword);
+        SavePasswordCommand.Faulted += e => PasswordStatus = e.Message;
+        ClearPasswordCommand.Faulted += e => PasswordStatus = e.Message;
 
         AddDepotCommand = new RelayCommand(() =>
         {
@@ -282,7 +292,75 @@ public sealed class ProfileViewModel : ViewModelBase
     public string SteamAccountName
     {
         get => _model.SteamAccountName;
-        set => Set(v => _model.SteamAccountName = v, _model.SteamAccountName, value);
+        set
+        {
+            Set(v => _model.SteamAccountName = v, _model.SteamAccountName, value);
+
+            // The password is filed under the account name, so retyping the account has
+            // to re-answer "is one saved?" — otherwise the card claims a password is
+            // stored for an account that has none.
+            OnPropertyChanged(nameof(HasStoredPassword));
+            OnPropertyChanged(nameof(PasswordSummary));
+            ClearPasswordCommand.RaiseCanExecuteChanged();
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Steam password
+    //
+    // Kept out of the profile JSON entirely: it goes to the platform secret store —
+    // DPAPI, the macOS keychain, or the Linux keyring — and only ever comes back out to
+    // be written to steamcmd's stdin. It is never put on a command line, where the
+    // process list would hand it to every other program on the machine.
+    // ------------------------------------------------------------------
+
+    public RelayCommand SavePasswordCommand { get; }
+    public RelayCommand ClearPasswordCommand { get; }
+
+    /// <summary>What the user is typing. Cleared the moment it reaches the store.</summary>
+    public string PasswordInput
+    {
+        get => _passwordInput;
+        set => SetProperty(ref _passwordInput, value);
+    }
+
+    public string PasswordStatus
+    {
+        get => _passwordStatus;
+        private set => SetProperty(ref _passwordStatus, value);
+    }
+
+    public bool HasStoredPassword =>
+        !string.IsNullOrWhiteSpace(_model.SteamAccountName) &&
+        !string.IsNullOrEmpty(_secrets.Read(SecretStoreFactory.SteamPassword(_model.SteamAccountName)));
+
+    public string PasswordSummary => HasStoredPassword
+        ? "Saved. Uploads sign in without asking; Steam Guard still prompts when the session expires."
+        : "Not saved. steamcmd asks the first time and then reuses its own cached session.";
+
+    private void SavePassword()
+    {
+        var account = _model.SteamAccountName.Trim();
+        if (account.Length == 0) { PasswordStatus = "Fill in the Steam account first."; return; }
+        if (PasswordInput.Length == 0) { PasswordStatus = "Type the password to save it."; return; }
+
+        _secrets.Write(SecretStoreFactory.SteamPassword(account), PasswordInput);
+        PasswordInput = string.Empty;
+        PasswordStatus = $"Password saved for {account}.";
+        RaiseAll(nameof(HasStoredPassword), nameof(PasswordSummary));
+        ClearPasswordCommand.RaiseCanExecuteChanged();
+    }
+
+    private void ClearPassword()
+    {
+        var account = _model.SteamAccountName.Trim();
+        if (account.Length == 0) return;
+
+        _secrets.Delete(SecretStoreFactory.SteamPassword(account));
+        PasswordInput = string.Empty;
+        PasswordStatus = $"Password removed for {account}.";
+        RaiseAll(nameof(HasStoredPassword), nameof(PasswordSummary));
+        ClearPasswordCommand.RaiseCanExecuteChanged();
     }
 
     public string SetLiveBranch

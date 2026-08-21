@@ -81,6 +81,8 @@ public sealed class SteamCmdSession
         Output?.Invoke(new SteamCmdEvent(SteamCmdEventKind.Bootstrap,
             $"Generated build scripts in {scriptOutputDirectory}"));
 
+        await WarmUpAsync(steamCmd, cancellation).ConfigureAwait(false);
+
         var runner = CreateRunner();
 
         // steamcmd resolves +run_app_build relative to its own working directory, which
@@ -103,6 +105,45 @@ public sealed class SteamCmdSession
             FindLatestBuildLog(profile.BuildOutput));
     }
 
+    /// <summary>
+    /// Runs <c>steamcmd +quit</c> and waits for it to finish, before the build.
+    ///
+    /// This exists because of one specific, reproducible hang. When steamcmd finds an
+    /// update for itself it installs it and <em>re-executes</em> as a child process. The
+    /// build run then loses its output stream part-way through the child's startup: the
+    /// log stops at the version banner, and everything after it — including the
+    /// "password:" prompt — never reaches the parser. Nothing answers the prompt, nothing
+    /// times out, and both sides wait for each other until the user notices.
+    ///
+    /// Letting the update happen in a throwaway process costs a couple of seconds on a
+    /// current install and removes the case entirely: by the time the build runs, there
+    /// is nothing left for steamcmd to update and no relaunch.
+    ///
+    /// No prompt handler is attached on purpose. <c>+quit</c> alone never asks for
+    /// credentials, and a dialog appearing during what the user sees as preparation would
+    /// be worse than the hang it prevents.
+    /// </summary>
+    private async Task WarmUpAsync(string steamCmdPath, CancellationToken cancellation)
+    {
+        Output?.Invoke(new SteamCmdEvent(SteamCmdEventKind.Bootstrap,
+            "Preparing steamcmd (letting it finish any self-update)…"));
+
+        var runner = new SteamCmdRunner();
+        runner.Output += evt => Output?.Invoke(evt);
+
+        try
+        {
+            await runner.RunAsync(steamCmdPath, new[] { "+quit" }, cancellation).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is IOException or System.ComponentModel.Win32Exception)
+        {
+            // A warm-up that cannot start is not a reason to refuse the upload: the build
+            // run below fails on its own, with an error about the actual build.
+            Output?.Invoke(new SteamCmdEvent(SteamCmdEventKind.Raw,
+                $"Could not pre-run steamcmd ({e.Message}); continuing."));
+        }
+    }
+
     private SteamCmdRunner CreateRunner()
     {
         var runner = new SteamCmdRunner(_prompt);
@@ -116,8 +157,9 @@ public sealed class SteamCmdSession
              "Check the build log — this usually means a depot failed to commit.",
         1 => "steamcmd exited with code 1. The most common causes are a rejected login " +
              "and a content root that no longer exists.",
-        5 => "steamcmd exited with code 5 (login failure). If the account has Steam Guard, " +
-             "sign in once from the Account screen so a session token gets cached.",
+        5 => "steamcmd exited with code 5 (login failure): the account name, the password " +
+             "or the Steam Guard code was rejected. If a password is saved for this account " +
+             "on the Project tab, check that it is still the current one.",
         _ => $"steamcmd exited with code {exitCode}."
     };
 

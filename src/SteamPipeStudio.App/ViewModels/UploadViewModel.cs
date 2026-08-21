@@ -6,8 +6,10 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
+using SteamPipeStudio.App.Services;
 using SteamPipeStudio.Core.Build;
 using SteamPipeStudio.Core.Model;
+using SteamPipeStudio.Core.Security;
 using SteamPipeStudio.Core.Steam;
 
 namespace SteamPipeStudio.App.ViewModels;
@@ -60,6 +62,7 @@ public sealed class UploadViewModel : ViewModelBase
     private readonly ISteamCmdPrompt _prompt;
     private readonly Action<BuildProfile> _onUploadSucceeded;
     private readonly Func<string, Task<bool>> _copyToClipboard;
+    private readonly ISecretStore _secrets;
 
     private CancellationTokenSource? _cancellation;
     private string _status = "Idle.";
@@ -75,13 +78,15 @@ public sealed class UploadViewModel : ViewModelBase
         Func<AppSettings> settings,
         ISteamCmdPrompt prompt,
         Action<BuildProfile> onUploadSucceeded,
-        Func<string, Task<bool>> copyToClipboard)
+        Func<string, Task<bool>> copyToClipboard,
+        ISecretStore secrets)
     {
         _currentProfile = currentProfile;
         _settings = settings;
         _prompt = prompt;
         _onUploadSucceeded = onUploadSucceeded;
         _copyToClipboard = copyToClipboard;
+        _secrets = secrets;
 
         UploadCommand = new AsyncRelayCommand(UploadAsync, () => !IsRunning);
         PreflightCommand = new AsyncRelayCommand(PreflightAsync, () => !IsRunning);
@@ -198,7 +203,15 @@ public sealed class UploadViewModel : ViewModelBase
         Append($"--- {DateTime.Now:HH:mm:ss} starting build for AppID {profile.AppId} ---",
                SteamCmdEventKind.Bootstrap);
 
-        var session = new SteamCmdSession(_prompt);
+        // The saved password, when there is one, is handed to steamcmd instead of opening
+        // the dialog. The decorator is built per upload because it is scoped to one
+        // account and remembers whether the stored value has already been tried.
+        var credentials = new StoredPasswordPrompt(_prompt, _secrets, profile.SteamAccountName);
+        credentials.StoredPasswordRejected += () => Dispatcher.UIThread.Post(() =>
+            Append($"The saved password for {profile.SteamAccountName} was not accepted — asking.",
+                   SteamCmdEventKind.SteamGuardPrompt));
+
+        var session = new SteamCmdSession(credentials);
         session.Output += OnSteamCmdEvent;
 
         try

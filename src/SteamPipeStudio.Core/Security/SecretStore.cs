@@ -20,6 +20,28 @@ public static class SecretStoreFactory
 {
     public const string PublisherApiKey = "publisher-web-api-key";
 
+    /// <summary>
+    /// Secret name holding the Steam password for one account. Per account rather than
+    /// per profile, because two profiles uploading different apps from the same account
+    /// share one login, and asking twice for the same password is how people end up
+    /// storing it somewhere worse.
+    ///
+    /// The name becomes a file name on Windows and Linux, so it is reduced to a
+    /// conservative character set. Steam account names are already limited to letters,
+    /// digits and underscores, which makes the escape hatch below unreachable in
+    /// practice — it exists so a typo in the account field cannot write outside the
+    /// secrets folder.
+    /// </summary>
+    public static string SteamPassword(string accountName)
+    {
+        var safe = new StringBuilder("steam-password-");
+
+        foreach (var c in accountName.Trim().ToLowerInvariant())
+            safe.Append(c is >= 'a' and <= 'z' or >= '0' and <= '9' or '_' or '-' ? c : '_');
+
+        return safe.ToString();
+    }
+
     public static ISecretStore Create(string storageDirectory)
     {
         if (OperatingSystem.IsWindows()) return new WindowsDpapiSecretStore(storageDirectory);

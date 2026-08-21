@@ -16,6 +16,7 @@ using System.Linq;
 using SteamPipeStudio.Core.Build;
 using SteamPipeStudio.Core.Ci;
 using SteamPipeStudio.Core.Model;
+using SteamPipeStudio.Core.Security;
 using SteamPipeStudio.Core.Steam;
 using SteamPipeStudio.Core.Vdf;
 
@@ -73,6 +74,7 @@ internal static class Program
         OutputParsing();
         CiExport();
         Locator();
+        Secrets();
         return Harness.Report();
     }
 
@@ -462,6 +464,23 @@ internal static class Program
         var failed = SteamCmdOutputParser.Parse("FAILED with result code Invalid Password");
         Harness.Equal("login failure", SteamCmdEventKind.LoginFailed, failed.Kind);
 
+        // steamcmd appends the verdict to the line that announces the attempt. Read off a
+        // real run: classifying this as chatter leaves a rejected login with no reason.
+        var rejected = SteamCmdOutputParser.Parse(
+            "Logging in user 'someone' [U:1:0] to Steam Public...ERROR (Invalid Password)");
+        Harness.Equal("login rejection on the attempt line",
+            SteamCmdEventKind.LoginFailed, rejected.Kind);
+        Harness.Equal("rejection reason extracted", "Invalid Password", rejected.Detail);
+
+        // The same line without a verdict is still just chatter.
+        var attempting = SteamCmdOutputParser.Parse(
+            "Logging in user 'someone' [U:1:0] to Steam Public...");
+        Harness.Equal("login attempt is not a failure", SteamCmdEventKind.Bootstrap, attempting.Kind);
+        Harness.Equal("account name extracted", "someone", attempting.Detail);
+
+        var loggedIn = SteamCmdOutputParser.Parse("Waiting for client config...OK");
+        Harness.Equal("login success", SteamCmdEventKind.LoginSucceeded, loggedIn.Kind);
+
         var bootstrap = SteamCmdOutputParser.Parse("[  4%] Checking for available updates...");
         Harness.Equal("bootstrap progress", SteamCmdEventKind.Bootstrap, bootstrap.Kind);
         Harness.Equal("bootstrap percent", 4d, bootstrap.Percent);
@@ -544,5 +563,59 @@ internal static class Program
         Harness.Check("empty path reports an error", !SteamCmdLocator.TryLocate("", out _, out _));
 
         Directory.Delete(root, true);
+    }
+
+    private static void Secrets()
+    {
+        Console.WriteLine("== secret store ==");
+
+        Harness.Equal("password name is per account",
+            "steam-password-andreagalet332", SecretStoreFactory.SteamPassword("andreagalet332"));
+
+        Harness.Equal("account casing does not fork the entry",
+            SecretStoreFactory.SteamPassword("AndreaGalet332"),
+            SecretStoreFactory.SteamPassword("andreagalet332"));
+
+        Harness.Equal("surrounding space is not part of the identity",
+            SecretStoreFactory.SteamPassword("andreagalet332"),
+            SecretStoreFactory.SteamPassword("  andreagalet332 "));
+
+        // The name becomes a file name. A separator in the account field must not be
+        // able to steer the write out of the secrets folder.
+        var hostile = SecretStoreFactory.SteamPassword("../../etc/passwd");
+        Harness.Check("path separators are neutralised",
+            !hostile.Contains('/') && !hostile.Contains('\\') && !hostile.Contains(".."),
+            hostile);
+        Harness.Check("every name stays inside the namespace",
+            hostile.StartsWith("steam-password-", StringComparison.Ordinal), hostile);
+
+        var root = Path.Combine(Path.GetTempPath(), "sps-secrets-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            var store = SecretStoreFactory.Create(root);
+            var name = SecretStoreFactory.SteamPassword("testaccount");
+
+            Harness.Equal("unset secret reads as null", null, store.Read(name));
+
+            store.Write(name, "hunter2 with spaces and ünicode");
+            Harness.Equal("secret round-trips", "hunter2 with spaces and ünicode", store.Read(name));
+
+            store.Write(name, "replaced");
+            Harness.Equal("writing again replaces", "replaced", store.Read(name));
+
+            store.Delete(name);
+            Harness.Equal("deleted secret reads as null", null, store.Read(name));
+
+            // Deleting something that was never there is what "Remove" does on a fresh
+            // profile, and it must not throw at the user.
+            store.Delete(name);
+            Harness.Check("deleting twice is harmless", true);
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch (IOException) { }
+        }
     }
 }
