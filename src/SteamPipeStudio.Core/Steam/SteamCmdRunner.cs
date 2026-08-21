@@ -620,8 +620,14 @@ public sealed class SteamCmdRunner
                 state.SawSuccess = true;
                 state.BuildId = evt.BuildId ?? state.BuildId;
                 break;
+            // "Success! App 'x' fully installed." is to a download what the
+            // build-finished line is to an upload: the one signal worth trusting.
+            case SteamCmdEventKind.DownloadSucceeded:
+                state.SawSuccess = true;
+                break;
             case SteamCmdEventKind.BuildFailed:
             case SteamCmdEventKind.LoginFailed:
+            case SteamCmdEventKind.DownloadFailed:
                 state.FailureDetail ??= evt.Detail ?? line.Trim();
                 break;
             // The console log splits a verdict off its own announcement — "Logging in
@@ -638,6 +644,7 @@ public sealed class SteamCmdRunner
             case SteamCmdEventKind.BuildStarted:
             case SteamCmdEventKind.DepotScanning:
             case SteamCmdEventKind.DepotUploading:
+            case SteamCmdEventKind.Downloading:
                 state.LoginSettled = true;
                 break;
             case SteamCmdEventKind.Progress when evt.BuildId is not null:

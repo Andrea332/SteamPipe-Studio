@@ -18,6 +18,10 @@ public enum SteamCmdEventKind
     Progress,
     BuildSucceeded,
     BuildFailed,
+    /// <summary>An <c>app_update</c> state line; <c>Detail</c> is the state name.</summary>
+    Downloading,
+    DownloadSucceeded,
+    DownloadFailed,
     Error
 }
 
@@ -131,6 +135,31 @@ public static class SteamCmdOutputParser
     private static readonly Regex GenericError = new(
         @"^\s*(?:ERROR!?|FATAL|Fatal\s+Error)\b", Options);
 
+    // ---- app_update, i.e. downloading a build ----
+    //
+    // " Update state (0x61) downloading, progress: 45.17 (1234567 / 2734567)". There is
+    // no percent sign, so the generic percent pattern below never sees these, and the
+    // state name is worth showing: "verifying install" for minutes is not a hang.
+    private static readonly Regex UpdateState = new(
+        @"Update\s+state\s*\(0x[0-9A-F]+\)\s*(?<state>[^,(]*?)\s*(?:,\s*progress:\s*(?<pct>\d{1,3}(?:\.\d+)?))?\s*(?:\(|$)",
+        Options);
+
+    // "Success! App '480' fully installed." — the only line that means the download is
+    // complete. As with the build-finished line, the exit code alone is not trusted.
+    private static readonly Regex AppInstalled = new(
+        @"Success!\s*App\s*'?(?<app>\d+)'?\s*fully\s+installed", Options);
+
+    // "Error! App '480' state is 0x202 after update job." — the state is the only clue
+    // steamcmd gives, and the common ones have well-known meanings.
+    private static readonly Regex AppUpdateFailed = new(
+        @"Error!\s*App\s*'?(?<app>\d+)'?\s*state\s+is\s+(?<state>0x[0-9A-F]+)\s+after\s+update\s+job",
+        Options);
+
+    // "ERROR! Failed to install app '480' (No subscription)" — refused before anything
+    // was downloaded; the reason in brackets is Steam's own wording.
+    private static readonly Regex AppInstallRefused = new(
+        @"Failed\s+to\s+install\s+app\s*'?(?<app>\d+)'?\s*\((?<reason>[^)]*)\)", Options);
+
     /// <summary>
     /// The same line without steamcmd's log stamp, used to recognise a line that arrives
     /// on two channels — the console log writes it stamped, the pipe delivers it bare.
@@ -154,6 +183,32 @@ public static class SteamCmdOutputParser
 
         if (BuildFailed.IsMatch(trimmed))
             return new SteamCmdEvent(SteamCmdEventKind.BuildFailed, line, Detail: trimmed);
+
+        // The app_update lines go before the login patterns on purpose: "Failed to
+        // install app" would otherwise be claimed by the generic FAILED matcher below and
+        // reported as a login failure with the reason "to install app".
+        var installed = AppInstalled.Match(trimmed);
+        if (installed.Success)
+            return new SteamCmdEvent(SteamCmdEventKind.DownloadSucceeded, line,
+                Detail: installed.Groups["app"].Value);
+
+        var updateFailed = AppUpdateFailed.Match(trimmed);
+        if (updateFailed.Success)
+            return new SteamCmdEvent(SteamCmdEventKind.DownloadFailed, line,
+                Detail: ExplainUpdateState(updateFailed.Groups["app"].Value,
+                                           updateFailed.Groups["state"].Value));
+
+        var refused = AppInstallRefused.Match(trimmed);
+        if (refused.Success)
+            return new SteamCmdEvent(SteamCmdEventKind.DownloadFailed, line,
+                Detail: ExplainInstallRefusal(refused.Groups["app"].Value,
+                                              refused.Groups["reason"].Value.Trim()));
+
+        var updateState = UpdateState.Match(trimmed);
+        if (updateState.Success)
+            return new SteamCmdEvent(SteamCmdEventKind.Downloading, line,
+                Percent: ParseDouble(updateState.Groups["pct"].Value),
+                Detail: updateState.Groups["state"].Value.Trim());
 
         if (SteamGuard.IsMatch(trimmed))
             return new SteamCmdEvent(SteamCmdEventKind.SteamGuardPrompt, line, Detail: trimmed);
@@ -224,6 +279,48 @@ public static class SteamCmdOutputParser
             return new SteamCmdEvent(SteamCmdEventKind.Progress, line, Percent: percent);
 
         return new SteamCmdEvent(SteamCmdEventKind.Raw, line);
+    }
+
+    /// <summary>
+    /// The states steamcmd leaves an app in when <c>app_update</c> fails. Valve does not
+    /// document them; these are the ones that come up in practice, with the meanings the
+    /// server-hosting community has pinned down (LinuxGSM keeps the list). Anything else
+    /// gets the generic advice plus the raw state, which is still more than "exit code 8".
+    /// </summary>
+    private static string ExplainUpdateState(string app, string state)
+    {
+        var why = state.ToUpperInvariant() switch
+        {
+            "0X202" or "0X206" =>
+                "Steam reports there is not enough free disk space in the destination.",
+            "0X602" or "0X606" =>
+                "steamcmd could not write to the destination folder — check its permissions.",
+            "0X402" =>
+                "The connection to Steam's content servers dropped; try again.",
+            _ =>
+                "Check the branch name and its password, that the account owns the app, " +
+                "and that the destination folder is writable."
+        };
+
+        return $"steamcmd could not finish installing AppID {app} (state {state}). {why}";
+    }
+
+    private static string ExplainInstallRefusal(string app, string reason)
+    {
+        if (reason.Contains("No subscription", StringComparison.OrdinalIgnoreCase))
+            return $"Steam says this account does not own AppID {app}, so it cannot download it. " +
+                   "Downloads need an account with the app in its library — the publisher's own " +
+                   "account, or one that redeemed a developer comp key.";
+
+        if (reason.Contains("Missing configuration", StringComparison.OrdinalIgnoreCase))
+            return $"Steam has no depot configuration for AppID {app} on this branch and platform. " +
+                   "Check the branch name, and whether the build has depots for the platform " +
+                   "being downloaded.";
+
+        if (reason.Contains("Invalid platform", StringComparison.OrdinalIgnoreCase))
+            return $"AppID {app} has nothing to install for the platform being downloaded.";
+
+        return $"steamcmd refused to install AppID {app}: {reason}.";
     }
 
     private static double? TryInlinePercent(string line)

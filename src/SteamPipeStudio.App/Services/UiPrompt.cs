@@ -40,6 +40,20 @@ public sealed class UiPrompt : ISteamCmdPrompt
             "Password",
             masked: true));
 
+    /// <summary>
+    /// Asks for the password of a protected beta branch before a download. Not part of
+    /// <see cref="ISteamCmdPrompt"/>: steamcmd never prompts for it, it has to be handed
+    /// over up front, and it is never stored anywhere.
+    /// </summary>
+    public Task<string?> RequestBranchPasswordAsync(string branch) =>
+        OnUiThread(() => PromptWindow.AskAsync(
+            _owner,
+            "Branch password",
+            $"The '{branch}' branch is password-protected. Enter its password to download the " +
+            "build from it. It is used for this download only and is never saved.",
+            "Branch password",
+            masked: true));
+
     public Task<bool> ConfirmAsync(string title, string message) =>
         OnUiThread(() => PromptWindow.ConfirmAsync(_owner, title, message));
 

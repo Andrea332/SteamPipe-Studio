@@ -26,11 +26,18 @@ public sealed class LogLineViewModel
     public SteamCmdEventKind Kind { get; }
 
     public bool IsError => Kind is SteamCmdEventKind.Error or SteamCmdEventKind.BuildFailed
-                                or SteamCmdEventKind.LoginFailed;
+                                or SteamCmdEventKind.LoginFailed or SteamCmdEventKind.DownloadFailed;
     public bool IsWarning => Kind is SteamCmdEventKind.SteamGuardPrompt or SteamCmdEventKind.LoginPrompt;
-    public bool IsSuccess => Kind is SteamCmdEventKind.BuildSucceeded or SteamCmdEventKind.LoginSucceeded;
+    public bool IsSuccess => Kind is SteamCmdEventKind.BuildSucceeded or SteamCmdEventKind.LoginSucceeded
+                                  or SteamCmdEventKind.DownloadSucceeded;
     public bool IsMuted => Kind is SteamCmdEventKind.Raw or SteamCmdEventKind.Bootstrap;
 }
+
+/// <summary>
+/// What another tab needs to draw a progress bar for a run this panel is executing on
+/// its behalf: the phase text, and the percentage when steamcmd gave one.
+/// </summary>
+public sealed record RunProgress(string Phase, double? Percent);
 
 public sealed class ValidationIssueViewModel
 {
@@ -72,6 +79,18 @@ public sealed class UploadViewModel : ViewModelBase
     private bool _isRunning;
     private string _preflightSummary = string.Empty;
     private string? _lastLogPath;
+
+    /// <summary>Where a running download's progress is mirrored to, while it runs.</summary>
+    private Action<RunProgress>? _downloadProgress;
+
+    /// <summary>
+    /// The stretch of work the bar is currently measuring ("Uploading depot 481"), and
+    /// the depot it belongs to. steamcmd reports progress as bare " 40.8MB (45%)" lines
+    /// that say nothing about what they are a percentage of, so the last phase announced
+    /// is what turns them into "Uploading depot 481 — 45%".
+    /// </summary>
+    private string _phaseLabel = string.Empty;
+    private uint? _currentDepot;
 
     public UploadViewModel(
         Func<ProfileViewModel?> currentProfile,
@@ -199,6 +218,8 @@ public sealed class UploadViewModel : ViewModelBase
         Progress = 0;
         IsIndeterminate = true;
         Phase = "Starting steamcmd…";
+        _phaseLabel = string.Empty;
+        _currentDepot = null;
         Status = profile.Preview ? "Running preview build (nothing is uploaded)…" : "Uploading…";
         Append($"--- {DateTime.Now:HH:mm:ss} starting build for AppID {profile.AppId} ---",
                SteamCmdEventKind.Bootstrap);
@@ -259,6 +280,90 @@ public sealed class UploadViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Runs a download started from the Builds tab through this panel, so that its log,
+    /// progress bar, Cancel button and credential prompts are the same ones an upload
+    /// uses. steamcmd is a shared resource — one builder folder, one console log — so a
+    /// download and an upload cannot overlap, and <see cref="IsRunning"/> is the one gate
+    /// for both. <paramref name="onProgress"/> receives the phase and percentage as they
+    /// change, so the tab the user clicked in can draw its own bar without the log panel.
+    /// </summary>
+    public async Task<DownloadOutcome> DownloadAsync(BuildProfile profile, DownloadRequest request,
+                                                     Action<RunProgress>? onProgress = null)
+    {
+        if (IsRunning)
+            throw new InvalidOperationException(
+                "steamcmd is already running. Wait for it to finish, or cancel it on the Upload tab.");
+
+        _cancellation = new CancellationTokenSource();
+        IsRunning = true;
+        Progress = 0;
+        IsIndeterminate = true;
+        Phase = "Starting steamcmd…";
+        _phaseLabel = string.Empty;
+        _currentDepot = null;
+        Status = $"Downloading AppID {profile.AppId} from '{request.Branch}'…";
+        _downloadProgress = onProgress;
+        onProgress?.Invoke(new RunProgress(Phase, null));
+        Append($"--- {DateTime.Now:HH:mm:ss} downloading AppID {profile.AppId}, branch '{request.Branch}', " +
+               $"into {request.InstallDirectory} ---", SteamCmdEventKind.Bootstrap);
+
+        var credentials = new StoredPasswordPrompt(_prompt, _secrets, profile.SteamAccountName);
+        credentials.StoredPasswordRejected += () => Dispatcher.UIThread.Post(() =>
+            Append($"The saved password for {profile.SteamAccountName} was not accepted — asking.",
+                   SteamCmdEventKind.SteamGuardPrompt));
+
+        var session = new SteamCmdSession(credentials);
+        session.Output += OnSteamCmdEvent;
+
+        try
+        {
+            var outcome = await session
+                .DownloadAsync(profile, _settings(), request, _cancellation.Token)
+                .ConfigureAwait(true);
+
+            if (outcome.Succeeded)
+            {
+                Progress = 100;
+                IsIndeterminate = false;
+                Status = $"Downloaded AppID {profile.AppId} ('{request.Branch}') to {outcome.InstallDirectory}.";
+                Append(Status, SteamCmdEventKind.DownloadSucceeded);
+            }
+            else
+            {
+                Fail(outcome.FailureDetail ?? "The download did not finish.");
+            }
+
+            return outcome;
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "Cancelled.";
+            Append("--- cancelled by user ---", SteamCmdEventKind.Error);
+            return new DownloadOutcome(false, "Cancelled.", request.InstallDirectory);
+        }
+        catch (Exception e) when (e is InvalidOperationException or IOException
+                                    or UnauthorizedAccessException
+                                    or System.ComponentModel.Win32Exception)
+        {
+            // A refused request, a missing steamcmd, a folder that cannot be written: the
+            // explanation belongs in the log next to the run it ended, not only in the
+            // status line of another tab.
+            Fail(e.Message);
+            return new DownloadOutcome(false, e.Message, request.InstallDirectory);
+        }
+        finally
+        {
+            session.Output -= OnSteamCmdEvent;
+            _downloadProgress = null;
+            _cancellation?.Dispose();
+            _cancellation = null;
+            IsRunning = false;
+            IsIndeterminate = false;
+            Phase = string.Empty;
+        }
+    }
+
     private void Cancel()
     {
         Status = "Cancelling…";
@@ -288,23 +393,59 @@ public sealed class UploadViewModel : ViewModelBase
                 case SteamCmdEventKind.LoginSucceeded:
                     Phase = "Signed in.";
                     break;
+                // Each depot is scanned and then uploaded, and steamcmd counts both from
+                // 0 to 100 — " 96.3MB (96%)" at the end of the scan, " 10.0MB (11%)" a
+                // second later as the upload starts. Without a fresh phase here the bar
+                // fills up and then falls back, which reads as the tool losing its place.
                 case SteamCmdEventKind.DepotScanning:
-                    Phase = evt.DepotId is null ? "Scanning content…" : $"Scanning depot {evt.DepotId}…";
-                    IsIndeterminate = evt.Percent is null;
+                    _currentDepot = evt.DepotId ?? _currentDepot;
+                    BeginPhase(_currentDepot is null ? "Scanning content" : $"Scanning depot {_currentDepot}");
                     break;
                 case SteamCmdEventKind.DepotUploading:
-                    Phase = evt.DepotId is null ? "Uploading…" : $"Uploading depot {evt.DepotId}…";
+                    _currentDepot = evt.DepotId ?? _currentDepot;
+                    BeginPhase(_currentDepot is null ? "Uploading" : $"Uploading depot {_currentDepot}");
+                    break;
+                case SteamCmdEventKind.Downloading:
+                    // The state name is steamcmd's own ("downloading", "verifying
+                    // install", "committing"); shown as-is so that a long verify reads as
+                    // work in progress rather than a stalled download.
+                    _phaseLabel = string.IsNullOrWhiteSpace(evt.Detail) ? "Downloading" : Sentence(evt.Detail);
+                    if (evt.Percent is null)
+                    {
+                        Phase = _phaseLabel + "…";
+                        IsIndeterminate = true;
+                    }
                     break;
             }
 
             if (evt.Percent is { } percent &&
                 evt.Kind is SteamCmdEventKind.DepotUploading or SteamCmdEventKind.DepotScanning
-                         or SteamCmdEventKind.Progress)
+                         or SteamCmdEventKind.Progress or SteamCmdEventKind.Downloading)
             {
                 IsIndeterminate = false;
                 Progress = percent;
+                if (_phaseLabel.Length > 0) Phase = $"{_phaseLabel} — {percent:0.#}%";
             }
+
+            // A download started from the Builds tab draws its own bar from the same
+            // numbers; cheap enough to do per line, and it keeps the two tabs in step.
+            _downloadProgress?.Invoke(new RunProgress(Phase, IsIndeterminate ? null : Progress));
         });
+    }
+
+    /// <summary>
+    /// A new stretch of work with its own 0–100: label it and start the bar over. A
+    /// repeat of the current label — steamcmd announces some phases on every line — is
+    /// not a new phase and leaves the bar where it is.
+    /// </summary>
+    private void BeginPhase(string label)
+    {
+        if (label == _phaseLabel) return;
+
+        _phaseLabel = label;
+        Phase = label + "…";
+        Progress = 0;
+        IsIndeterminate = true;
     }
 
     private void Append(string text, SteamCmdEventKind kind)
@@ -324,6 +465,9 @@ public sealed class UploadViewModel : ViewModelBase
         Append(message, SteamCmdEventKind.Error);
         IsIndeterminate = false;
     }
+
+    private static string Sentence(string text) =>
+        text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];
 
     private void OpenLatestLog()
     {

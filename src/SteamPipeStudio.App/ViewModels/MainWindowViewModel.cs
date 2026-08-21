@@ -34,9 +34,22 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         Upload = new UploadViewModel(() => SelectedProfile, () => _settings, _prompt, OnUploadSucceeded,
                                      _prompt.CopyToClipboardAsync, _secrets);
-        Builds = new BuildsViewModel(() => SelectedProfile, () => _settings, _secrets, _prompt.ConfirmAsync);
+        Builds = new BuildsViewModel(() => SelectedProfile, () => _settings, _secrets, _prompt.ConfirmAsync,
+            new DownloadServices(
+                PickFolder: (title, startAt) => _prompt.PickFolderAsync(title, startAt ?? SelectedProfile?.BuildOutput),
+                AskBranchPassword: _prompt.RequestBranchPasswordAsync,
+                Download: Upload.DownloadAsync,
+                IsSteamCmdBusy: () => Upload.IsRunning,
+                Persist: PersistModel));
         Settings = new SettingsViewModel(_settings, store, _secrets,
             title => _prompt.PickFolderAsync(title, _settings.ContentBuilderPath));
+
+        // The Download buttons on the Builds tab are disabled while steamcmd is busy on
+        // the Upload tab, and nothing else tells them when that changes.
+        Upload.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(UploadViewModel.IsRunning)) Builds.RefreshCommandStates();
+        };
 
         NewProfileCommand = new RelayCommand(NewProfile);
         DuplicateProfileCommand = new RelayCommand(DuplicateProfile, () => SelectedProfile is not null);
@@ -226,16 +239,25 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         _settings.LastSteamAccountName = profile.SteamAccountName;
         _store.SaveSettings(_settings);
+        PersistModel(profile);
+    }
 
-        // Look the view model up by identity: an upload takes minutes and the user may
-        // have switched projects meanwhile. Marking the *selected* one clean would throw
-        // away edits made to a different project while this one was uploading.
-        //
-        // Persist rather than SaveProfile: depot rows only reach the model through
-        // Flush(), which last ran when the upload started, so a mapping added during the
-        // upload would be marked clean and then dropped.
-        var uploaded = Profiles.FirstOrDefault(p => p.Model.Id == profile.Id);
-        if (uploaded is not null) Persist(uploaded);
+    /// <summary>
+    /// Saves a profile that was changed through its model rather than its view model —
+    /// by an upload stamping the build id, or a download remembering its folder.
+    ///
+    /// Looked up by identity: an upload takes minutes and the user may have switched
+    /// projects meanwhile. Marking the <em>selected</em> one clean would throw away edits
+    /// made to a different project while this one was uploading.
+    ///
+    /// Persist rather than SaveProfile: depot rows only reach the model through Flush(),
+    /// which last ran when the upload started, so a mapping added during the upload would
+    /// be marked clean and then dropped.
+    /// </summary>
+    private void PersistModel(BuildProfile profile)
+    {
+        var owner = Profiles.FirstOrDefault(p => p.Model.Id == profile.Id);
+        if (owner is not null) Persist(owner);
         else _store.SaveProfile(profile);
     }
 

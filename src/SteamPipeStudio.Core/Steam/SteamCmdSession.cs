@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -15,6 +16,34 @@ public sealed record UploadOutcome(
     string? FailureDetail,
     string AppScriptPath,
     string? BuildLogPath);
+
+/// <summary>
+/// Whose depots <c>app_update</c> fetches. <see cref="Host"/> leaves the choice to
+/// steamcmd, which installs for the machine it runs on; the others force it, which is
+/// how a Windows box pulls the macOS build to look at it.
+/// </summary>
+public enum DownloadPlatform
+{
+    Host,
+    Windows,
+    MacOS,
+    Linux
+}
+
+/// <summary>
+/// What to download and where. The app and the account come from the profile: a
+/// download logs in exactly like an upload does.
+/// </summary>
+public sealed record DownloadRequest(
+    string Branch,
+    string? BranchPassword,
+    string InstallDirectory,
+    DownloadPlatform Platform = DownloadPlatform.Host);
+
+public sealed record DownloadOutcome(
+    bool Succeeded,
+    string? FailureDetail,
+    string InstallDirectory);
 
 /// <summary>
 /// The upload workflow: generate scripts, validate, log in, run the build.
@@ -107,6 +136,219 @@ public sealed class SteamCmdSession
             appScriptPath,
             FindLatestBuildLog(profile.BuildOutput));
     }
+
+    /// <summary>
+    /// Downloads the build that is live on a branch into a folder, with
+    /// <c>app_update</c>: the same files, in the same layout, that a player installing
+    /// from that branch receives. A build is not a file on Steam but a set of depot
+    /// manifests, so "downloading a build" means asking steamcmd to install the branch it
+    /// is live on; a build that is on no branch has to be promoted to one first — a
+    /// private branch will do.
+    ///
+    /// Two things about the command line are not negotiable. <c>force_install_dir</c> has
+    /// to come before <c>login</c>, or steamcmd prints a warning and installs under its
+    /// own folder instead. And the branch password, when the branch has one, travels in
+    /// a <c>+runscript</c> file rather than on the command line, for the same reason the
+    /// account password never does: the process list is readable by every other program
+    /// on the machine. The file lives for the duration of the run and is owner-only where
+    /// the filesystem can express that.
+    /// </summary>
+    public async Task<DownloadOutcome> DownloadAsync(
+        BuildProfile profile,
+        AppSettings settings,
+        DownloadRequest request,
+        CancellationToken cancellation = default)
+    {
+        if (DownloadProblem(profile, request) is { } problem)
+            throw new InvalidOperationException(problem);
+
+        var contentBuilderPath = !string.IsNullOrWhiteSpace(profile.ContentBuilderPathOverride)
+            ? profile.ContentBuilderPathOverride
+            : settings.ContentBuilderPath;
+
+        if (!SteamCmdLocator.TryLocate(contentBuilderPath, out var steamCmd, out var error))
+            throw new FileNotFoundException(error);
+
+        var installDirectory = Path.GetFullPath(request.InstallDirectory);
+
+        // steamcmd would create it too, but creating it here turns a permissions problem
+        // into an exception with the path in it, before a login has been asked for.
+        Directory.CreateDirectory(installDirectory);
+
+        await WarmUpAsync(steamCmd, cancellation).ConfigureAwait(false);
+
+        string? passwordScript = null;
+        try
+        {
+            if (!string.IsNullOrEmpty(request.BranchPassword))
+                passwordScript = WritePasswordScript(profile.AppId, request.Branch, request.BranchPassword);
+
+            var arguments = DownloadArguments(profile.AppId, profile.SteamAccountName,
+                                              request with { InstallDirectory = installDirectory },
+                                              passwordScript);
+
+            Output?.Invoke(new SteamCmdEvent(SteamCmdEventKind.Bootstrap,
+                $"Downloading AppID {profile.AppId} from branch '{request.Branch}' into {installDirectory}"));
+
+            var runner = CreateRunner();
+            var result = await runner.RunAsync(steamCmd, arguments, cancellation).ConfigureAwait(false);
+
+            return new DownloadOutcome(
+                result.Succeeded,
+                result.FailureDetail ?? (result.Succeeded ? null : DescribeDownloadExit(result)),
+                installDirectory);
+        }
+        finally
+        {
+            if (passwordScript is not null)
+            {
+                try { File.Delete(passwordScript); }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Why a download cannot start, or <c>null</c> when it can. Pure, so the tests can
+    /// pin the checks without a steamcmd install.
+    /// </summary>
+    internal static string? DownloadProblem(BuildProfile profile, DownloadRequest request)
+    {
+        if (profile.AppId == 0)
+            return "The project has no App ID.";
+
+        if (string.IsNullOrWhiteSpace(profile.SteamAccountName))
+            return "Enter the Steam account on the Project tab first: a download logs in with it, " +
+                   "exactly like an upload.";
+
+        if (string.IsNullOrWhiteSpace(request.Branch))
+            return "Pick a branch the build is live on.";
+
+        if (string.IsNullOrWhiteSpace(request.InstallDirectory))
+            return "Choose a folder to download into.";
+
+        // The same mistake the validator refuses for the build output, with the same
+        // consequence: the next upload would ship the downloaded build inside the game.
+        if (BuildValidator.IsInside(request.InstallDirectory, profile.ContentRoot))
+            return "The download folder is inside the content folder, so the next upload would " +
+                   "include the downloaded build in the game. Pick a folder outside it.";
+
+        return null;
+    }
+
+    /// <summary>
+    /// The steamcmd command line for a download. Internal so the tests can pin the order,
+    /// which steamcmd is picky about: the platform override and <c>force_install_dir</c>
+    /// both have to precede <c>login</c>. With a branch password the <c>app_update</c>
+    /// moves into the script at <paramref name="passwordScriptPath"/>, so that neither
+    /// the password nor anything else about the branch is on the command line.
+    /// </summary>
+    internal static List<string> DownloadArguments(uint appId, string accountName,
+                                                   DownloadRequest request, string? passwordScriptPath)
+    {
+        var arguments = new List<string>();
+
+        if (PlatformName(request.Platform) is { } platform)
+            arguments.AddRange(new[] { "+@sSteamCmdForcePlatformType", platform });
+
+        arguments.AddRange(new[]
+        {
+            "+force_install_dir", Path.GetFullPath(request.InstallDirectory),
+            "+login", accountName
+        });
+
+        if (passwordScriptPath is null)
+        {
+            arguments.Add("+app_update");
+            arguments.AddRange(AppUpdateArguments(appId, request.Branch, null));
+        }
+        else
+        {
+            arguments.AddRange(new[] { "+runscript", passwordScriptPath });
+        }
+
+        arguments.Add("+quit");
+        return arguments;
+    }
+
+    /// <summary>The one-line script that carries the branch password.</summary>
+    internal static string PasswordScript(uint appId, string branch, string password) =>
+        "app_update " + string.Join(' ', AppUpdateArguments(appId, branch, password));
+
+    private static IEnumerable<string> AppUpdateArguments(uint appId, string branch, string? password)
+    {
+        yield return appId.ToString(CultureInfo.InvariantCulture);
+
+        // "-beta public" is not a thing steamcmd understands as "the default branch";
+        // leaving the switch off is.
+        if (!IsDefaultBranch(branch))
+        {
+            yield return "-beta";
+            yield return branch;
+        }
+
+        if (!string.IsNullOrEmpty(password))
+        {
+            yield return "-betapassword";
+            // steamcmd's script reader splits on spaces and honours double quotes.
+            yield return password.Any(char.IsWhiteSpace) ? "\"" + password + "\"" : password;
+        }
+
+        // Re-verifies files already in the folder, which is what makes downloading a
+        // second build into the same folder an incremental update rather than a mess.
+        yield return "validate";
+    }
+
+    internal static bool IsDefaultBranch(string? branch) =>
+        string.IsNullOrWhiteSpace(branch) || branch.Equals("public", StringComparison.OrdinalIgnoreCase);
+
+    private static string? PlatformName(DownloadPlatform platform) => platform switch
+    {
+        DownloadPlatform.Windows => "windows",
+        DownloadPlatform.MacOS => "macos",
+        DownloadPlatform.Linux => "linux",
+        _ => null
+    };
+
+    private static string WritePasswordScript(uint appId, string branch, string password)
+    {
+        var path = Path.Combine(Path.GetTempPath(), "steampipe-" + Guid.NewGuid().ToString("N") + ".txt");
+
+        // CreateNew, so a file planted at a guessed name is an error rather than a target;
+        // owner-only on Unix, where the temp folder is shared between users.
+        var options = new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.Write,
+            Share = FileShare.None
+        };
+        if (!OperatingSystem.IsWindows())
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+
+        using var stream = new FileStream(path, options);
+        using var writer = new StreamWriter(stream);
+        writer.Write(PasswordScript(appId, branch, password));
+        writer.Write('\n');
+
+        return path;
+    }
+
+    private static string DescribeDownloadExit(SteamCmdResult result) => result switch
+    {
+        { SawSuccess: true } =>
+            $"steamcmd reported the app fully installed but exited with code {result.ExitCode}. " +
+            "The files should be in place; check the log above.",
+        { ExitCode: 0 } =>
+            "steamcmd exited cleanly but never reported the app as fully installed. " +
+            "Check the log above — the last lines before it quit usually say why.",
+        { ExitCode: 5 } =>
+            "steamcmd exited with code 5 (login failure): the account name, the password " +
+            "or the Steam Guard code was rejected.",
+        { ExitCode: 8 } =>
+            "steamcmd exited with code 8: the download did not complete. " +
+            "The error line above it says why.",
+        _ => $"steamcmd exited with code {result.ExitCode}."
+    };
 
     /// <summary>
     /// Runs <c>steamcmd +quit</c> and waits for it to finish, before the build.

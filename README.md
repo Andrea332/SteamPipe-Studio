@@ -41,9 +41,15 @@ Not affiliated with or endorsed by Valve.
   script, follows its depot references and turns it into an editable project. Both SDK
   layouts round-trip: the inline depot of `simple_app_build.vdf` and the multi-file
   `app_build_1000.vdf`.
-- **Tells you what is live.** The Builds tab reads build history and branches through
-  the Steamworks partner Web API and can promote a build to a branch, which is the
-  reason you would otherwise keep the Steamworks site open in a tab.
+- **Tells you what is live, and hands it back to you.** The Builds tab reads build
+  history and branches through the Steamworks partner Web API and can promote a build to
+  a branch, which is the reason you would otherwise keep the Steamworks site open in a
+  tab. Every build that is live on a branch also gets a *Download* button: `steamcmd`
+  installs it into a folder of your choice — the same files, in the same layout, that a
+  player gets, for this machine's platform or any other — so a tester gets last night's
+  build without a Steam client and without being handed the account. A build on no
+  branch cannot be downloaded, because on Steam a build is a set of depot manifests
+  rather than a file: set it live on a private branch first and it becomes one.
 - **Shows the whole run as it happens, and lets you take it with you.** The log panel
   follows `steamcmd`'s own console log as well as its pipe, so prompts and progress
   appear when they are printed rather than when the pipe gets around to flushing them —
@@ -125,7 +131,7 @@ those with `tar`, or `chmod +x` after transferring.
 dotnet run --project src/SteamPipeStudio.Tests
 ```
 
-153 assertions over the whole Core library, exiting non-zero on failure. No test
+194 assertions over the whole Core library, exiting non-zero on failure. No test
 framework and no packages: the suite runs on a locked-down build agent that cannot
 restore from NuGet, which is exactly where you want a build pipeline to still work.
 
@@ -205,6 +211,21 @@ on older builders, `AppID 480 build (BuildID 12345678).` on SDK 1.63 — so the 
 anchors on the first half and reads the build id off the tail; the next rewording
 degrades to a success without a number instead of a failure.
 
+**A download is an install of a branch, and the command order is not negotiable.** Steam
+has no "download build 12345678": a build is a set of depot manifests, and `steamcmd` can
+only install what a branch points at, so the *Download* button runs `+force_install_dir
+<folder> +login <account> +app_update <appid> -beta <branch> validate +quit` for a branch
+that carries the build. `force_install_dir` has to precede `login` — after it, `steamcmd`
+prints a warning and installs under its own folder. A password-protected branch needs
+`-betapassword`, which would otherwise sit on the command line for the whole download, so
+in that case the `app_update` line moves into a `+runscript` file that is owner-only where
+the filesystem can say so and is deleted when the run ends. Downloading a second build
+into the same folder is an incremental update — `validate` re-checks what is already
+there — and the per-project folder is remembered for that reason. The progress lines have
+no percent sign, and `Success! App 'x' fully installed.` is the only line trusted to mean
+the files are all there; `Error! App 'x' state is 0x202 after update job.` is translated
+into the disk-space problem it almost always is, rather than shown as a hex number.
+
 ## Known limits
 
 Two things cannot be verified without a real publisher account, and are the first places
@@ -214,7 +235,10 @@ to look if something misbehaves:
   format and it changes between SDK releases. Anything unrecognised falls through to the
   log verbatim, so a mismatch degrades to "the progress bar stops moving", not a crash.
   If a successful build stops being detected after an SDK update, this file is the only
-  thing that needs changing.
+  thing that needs changing. The same goes for downloads: `Update state (0x61)
+  downloading, progress: 45.17 (…)` drives the bar and `Success! App '480' fully
+  installed.` is the only line that counts as done, and both are read off today's
+  `steamcmd`.
 - **`Steam/PartnerApiClient.cs`** — the JSON shapes of `GetAppBuilds` and `GetAppBetas`
   are not published. Parsing walks the response looking for the fields it needs rather
   than binding to a fixed schema, so a reshaped response degrades to missing columns

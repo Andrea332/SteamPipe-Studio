@@ -72,6 +72,7 @@ internal static class Program
         Validation();
         Preflight();
         OutputParsing();
+        Download();
         CiExport();
         Locator();
         ConsoleLogDeduplication();
@@ -533,6 +534,24 @@ internal static class Program
         Harness.Equal("upload depot", 481u, uploading.DepotId);
         Harness.Equal("upload percent", 42.5d, uploading.Percent);
 
+        // What SDK 1.65 actually prints while scanning and uploading, read off a real
+        // console log: "Scanning content" / "Uploading content..." once, then bare
+        // " 40.8MB (45%)" lines between runs of "." — no phase, no depot, just the
+        // number. They have to come through as progress or the bar never moves.
+        var bareProgress = SteamCmdOutputParser.Parse("[2026-08-21 16:27:21]  40.8MB (45%)");
+        Harness.Equal("bare progress line", SteamCmdEventKind.Progress, bareProgress.Kind);
+        Harness.Equal("bare progress percent", 45d, bareProgress.Percent);
+
+        var uploadingContent = SteamCmdOutputParser.Parse("[2026-08-21 16:27:08] Uploading content...");
+        Harness.Equal("upload phase announced without a depot",
+            SteamCmdEventKind.DepotUploading, uploadingContent.Kind);
+        Harness.Equal("no depot on the announcement", null, uploadingContent.DepotId);
+
+        var buildingDepot = SteamCmdOutputParser.Parse(
+            "[2026-08-21 16:27:07] [2026-08-21 16:27:07]: Building depot 2089871...");
+        Harness.Equal("building depot names the depot", SteamCmdEventKind.DepotScanning, buildingDepot.Kind);
+        Harness.Equal("depot id from the building line", 2089871u, buildingDepot.DepotId);
+
         var scanning = SteamCmdOutputParser.Parse("Scanning content");
         Harness.Equal("scan event", SteamCmdEventKind.DepotScanning, scanning.Kind);
 
@@ -553,6 +572,119 @@ internal static class Program
             new SteamCmdResult(3, true, 1u, null).Succeeded);
         Harness.Equal("both signals agree", true,
             new SteamCmdResult(0, true, 1u, null).Succeeded);
+
+        // ---- app_update, i.e. downloading a build ----
+
+        // The progress line carries no percent sign, so before it had a pattern of its
+        // own it fell through as Raw and the bar never moved during a download.
+        var downloading = SteamCmdOutputParser.Parse(
+            " Update state (0x61) downloading, progress: 45.17 (1234567 / 2734567)");
+        Harness.Equal("download progress event", SteamCmdEventKind.Downloading, downloading.Kind);
+        Harness.Equal("download percent", 45.17d, downloading.Percent);
+        Harness.Equal("download state name", "downloading", downloading.Detail);
+
+        var verifying = SteamCmdOutputParser.Parse(
+            "[2026-08-21 18:40:02]  Update state (0x5) verifying install, progress: 12.34 (10 / 81)");
+        Harness.Equal("stamped update state still detected",
+            SteamCmdEventKind.Downloading, verifying.Kind);
+        Harness.Equal("multi-word state name", "verifying install", verifying.Detail);
+
+        var reconfiguring = SteamCmdOutputParser.Parse(" Update state (0x3) reconfiguring");
+        Harness.Equal("state without progress", SteamCmdEventKind.Downloading, reconfiguring.Kind);
+        Harness.Equal("no percent when steamcmd gives none", null, reconfiguring.Percent);
+
+        var installed = SteamCmdOutputParser.Parse("Success! App '480' fully installed.");
+        Harness.Equal("download success", SteamCmdEventKind.DownloadSucceeded, installed.Kind);
+        Harness.Equal("installed app id", "480", installed.Detail);
+
+        var diskFull = SteamCmdOutputParser.Parse("Error! App '480' state is 0x202 after update job.");
+        Harness.Equal("update job failure", SteamCmdEventKind.DownloadFailed, diskFull.Kind);
+        Harness.Check("disk space explained",
+            diskFull.Detail?.Contains("disk space", StringComparison.OrdinalIgnoreCase) == true,
+            diskFull.Detail);
+
+        // Without a pattern of its own this line is claimed by the generic FAILED matcher
+        // and reported as a login failure with the reason "to install app".
+        var notOwned = SteamCmdOutputParser.Parse("ERROR! Failed to install app '480' (No subscription)");
+        Harness.Equal("install refusal", SteamCmdEventKind.DownloadFailed, notOwned.Kind);
+        Harness.Check("ownership explained",
+            notOwned.Detail?.Contains("does not own", StringComparison.OrdinalIgnoreCase) == true,
+            notOwned.Detail);
+    }
+
+    private static void Download()
+    {
+        Console.WriteLine("== build download ==");
+
+        var request = new DownloadRequest("beta", null, Path.Combine(Path.GetTempPath(), "spd-download"));
+        var arguments = SteamCmdSession.DownloadArguments(480, "someone", request, null);
+        var commandLine = string.Join(' ', arguments);
+
+        // steamcmd honours force_install_dir only before logon; after it, the download
+        // lands in steamcmd's own folder with a warning nobody reads.
+        Harness.Check("install dir precedes login",
+            arguments.IndexOf("+force_install_dir") < arguments.IndexOf("+login"), commandLine);
+        Harness.Equal("login account", "someone", arguments[arguments.IndexOf("+login") + 1]);
+        Harness.Check("app_update names the branch and validates",
+            commandLine.Contains("+app_update 480 -beta beta validate"), commandLine);
+        Harness.Equal("ends with quit", "+quit", arguments[^1]);
+        Harness.Check("no platform override unless asked",
+            !arguments.Contains("+@sSteamCmdForcePlatformType"), commandLine);
+
+        var linux = SteamCmdSession.DownloadArguments(480, "someone",
+            request with { Platform = DownloadPlatform.Linux }, null);
+        Harness.Equal("platform override comes first", "+@sSteamCmdForcePlatformType", linux[0]);
+        Harness.Equal("platform name", "linux", linux[1]);
+
+        // "-beta public" is not how steamcmd spells the default branch; no switch is.
+        var publicBranch = SteamCmdSession.DownloadArguments(480, "someone",
+            request with { Branch = "public" }, null);
+        Harness.Check("default branch has no -beta switch", !publicBranch.Contains("-beta"),
+            string.Join(' ', publicBranch));
+        Harness.Check("default branch spelled either way",
+            SteamCmdSession.IsDefaultBranch("PUBLIC") && SteamCmdSession.IsDefaultBranch("") &&
+            !SteamCmdSession.IsDefaultBranch("beta"));
+
+        // A branch password travels in a script file, never on the command line, where
+        // the process list would show it to every other program on the machine.
+        var scripted = SteamCmdSession.DownloadArguments(480, "someone",
+            request with { BranchPassword = "s3cret" }, @"C:\tmp\script.txt");
+        Harness.Check("password never on the command line",
+            !scripted.Any(a => a.Contains("s3cret")), string.Join(' ', scripted));
+        Harness.Check("app_update moves into the script",
+            !scripted.Contains("+app_update") && scripted.Contains("+runscript"), string.Join(' ', scripted));
+        Harness.Equal("script path follows runscript", @"C:\tmp\script.txt",
+            scripted[scripted.IndexOf("+runscript") + 1]);
+        Harness.Equal("script line", "app_update 480 -beta beta -betapassword s3cret validate",
+            SteamCmdSession.PasswordScript(480, "beta", "s3cret"));
+        Harness.Equal("password with spaces is quoted",
+            "app_update 480 -beta beta -betapassword \"two words\" validate",
+            SteamCmdSession.PasswordScript(480, "beta", "two words"));
+
+        // What refuses to start, before steamcmd is even looked for.
+        var contentRoot = Path.Combine(Path.GetTempPath(), "spd-content");
+        var profile = new BuildProfile { AppId = 480, SteamAccountName = "someone", ContentRoot = contentRoot };
+
+        Harness.Equal("a sound request has no problem", null, SteamCmdSession.DownloadProblem(profile, request));
+        Harness.Check("no account is refused",
+            SteamCmdSession.DownloadProblem(new BuildProfile { AppId = 480 }, request) is not null);
+        Harness.Check("no app id is refused",
+            SteamCmdSession.DownloadProblem(new BuildProfile { SteamAccountName = "someone" }, request) is not null);
+        Harness.Check("no branch is refused",
+            SteamCmdSession.DownloadProblem(profile, request with { Branch = " " }) is not null);
+        Harness.Check("no folder is refused",
+            SteamCmdSession.DownloadProblem(profile, request with { InstallDirectory = "" }) is not null);
+
+        // The same mistake the validator refuses for the build output: a download inside
+        // the content folder ships with the next upload.
+        Harness.Check("download inside the content folder is refused",
+            SteamCmdSession.DownloadProblem(profile,
+                request with { InstallDirectory = Path.Combine(contentRoot, "downloaded") }) is not null);
+        Harness.Check("the content folder itself is refused",
+            SteamCmdSession.DownloadProblem(profile, request with { InstallDirectory = contentRoot }) is not null);
+        Harness.Equal("a sibling folder is fine", null,
+            SteamCmdSession.DownloadProblem(profile,
+                request with { InstallDirectory = Path.Combine(Path.GetTempPath(), "spd-content-download") }));
     }
 
     private static void CiExport()

@@ -131,6 +131,13 @@ public sealed class BuildProfile
 
     public List<DepotDefinition> Depots { get; set; } = new();
 
+    /// <summary>
+    /// Where the Builds tab last downloaded a build of this app to. Remembered per
+    /// project because downloading a second build into the same folder is an incremental
+    /// update, and because a test install belongs next to the game it is a build of.
+    /// </summary>
+    public string DownloadDirectory { get; set; } = string.Empty;
+
     public DateTimeOffset? LastUploadedUtc { get; set; }
 
     public uint? LastBuildId { get; set; }
@@ -150,6 +157,7 @@ public sealed class BuildProfile
         Verbose = Verbose,
         LocalContentServerPath = LocalContentServerPath,
         Depots = Depots.ConvertAll(d => d.Clone()),
+        DownloadDirectory = DownloadDirectory,
         LastUploadedUtc = LastUploadedUtc,
         LastBuildId = LastBuildId
     };
