@@ -6,6 +6,7 @@
         CanResize="False"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False"
+        Icon="avares://SteamPipeStudio/Assets/icon.ico"
         Title="SteamPipe Studio">
 
   <StackPanel Margin="24" Spacing="12">

@@ -18,4 +18,10 @@
     <InternalsVisibleTo Include="SteamPipeStudio.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The de-duplication between steamcmd's console log and its pipe is intricate
+         enough to need tests, and is an implementation detail everywhere else. -->
+    <InternalsVisibleTo Include="SteamPipeStudio.Tests" />
+  </ItemGroup>
+
 </Project>

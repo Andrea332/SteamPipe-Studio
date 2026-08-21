@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>SteamPipe Studio</title>
+
+  <!--
+    Vector master for the application icon. icon.ico and the PNGs beside it are rendered
+    from this geometry; edit here and re-render rather than touching the bitmaps.
+
+    A bolted pipe flange seen head-on, with the build rising through the bore. The
+    hexagon is what carries the identity at small sizes: by 16px the chevrons have blurred
+    into a single bright mark, but the six-sided silhouette is still unmistakable, which is
+    why this shape was chosen over the arrow-in-a-circle that reads as every other upload
+    button ever drawn.
+
+    Every coordinate is on a 256 grid. The badge corner radius is 56 (22%), matching the
+    squircle Windows and macOS both expect.
+  -->
+
+  <defs>
+    <linearGradient id="badge" x1="0" y1="0" x2="0" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1E2732"/>
+      <stop offset="1" stop-color="#0E1218"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0" y1="48" x2="0" y2="208" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5B9BE8"/>
+      <stop offset="1" stop-color="#2F6FC4"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="256" height="256" rx="56" ry="56" fill="url(#badge)"/>
+
+  <!-- A hairline lift along the edge; without it the badge reads as a flat rectangle
+       next to the system's own icons. -->
+  <rect x="1.5" y="1.5" width="253" height="253" rx="55" ry="55"
+        fill="none" stroke="#FFFFFF" stroke-opacity="0.102" stroke-width="3"/>
+
+  <!-- Flange: a hexagon with 14px rounded corners, bored through the middle. The bore is
+       a second subpath and evenodd punches it out. -->
+  <path fill="url(#metal)" fill-rule="evenodd"
+        d="M 213.02 115.86 Q 220 128 213.02 140.14
+           L 180.98 195.86 Q 174 208 160 208
+           L 96 208 Q 82 208 75.02 195.86
+           L 42.98 140.14 Q 36 128 42.98 115.86
+           L 75.02 60.14 Q 82 48 96 48
+           L 160 48 Q 174 48 180.98 60.14 Z
+           M 128 68 A 60 60 0 1 0 128 188 A 60 60 0 1 0 128 68 Z"/>
+
+  <!-- Bolts on the edge midpoints. They disappear below 32px, where they simply thicken
+       the ring rather than breaking it into a dashed outline. -->
+  <g fill="#16202B">
+    <circle cx="195.55" cy="167" r="8"/>
+    <circle cx="128" cy="206" r="8"/>
+    <circle cx="60.45" cy="167" r="8"/>
+    <circle cx="60.45" cy="89" r="8"/>
+    <circle cx="128" cy="50" r="8"/>
+    <circle cx="195.55" cy="89" r="8"/>
+  </g>
+
+  <!-- Flow through the bore. Two chevrons with air between them: crowded any closer they
+       render as one blob at 16px. -->
+  <g fill="none" stroke="#EDF4FE" stroke-width="22"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 96 122 L 128 94 L 160 122"/>
+    <path d="M 96 176 L 128 148 L 160 176"/>
+  </g>
+</svg>

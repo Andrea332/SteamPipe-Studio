@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="SteamPipeStudio.App.Views.MainWindow"
         Title="SteamPipe Studio"
+        Icon="avares://SteamPipeStudio/Assets/icon.ico"
         Width="1180" Height="780"
         MinWidth="900" MinHeight="620">
 

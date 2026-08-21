@@ -13,6 +13,10 @@
     <!-- Cross-platform publish targets. -->
     <RuntimeIdentifiers>win-x64;osx-arm64;osx-x64;linux-x64</RuntimeIdentifiers>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Compiled into the Windows executable, which is what Explorer, the taskbar and
+         alt-tab read. It has no effect on the other targets, and none on the window's own
+         icon at runtime — that is set in MainWindow from the AvaloniaResource below. -->
+    <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,6 +26,14 @@
     <PackageReference Include="Avalonia.Fonts.Inter" Version="$(AvaloniaVersion)" />
     <PackageReference Include="Avalonia.Diagnostics" Version="$(AvaloniaVersion)"
                       Condition="'$(Configuration)' == 'Debug'" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Only the .ico is embedded. It carries every size from 16 to 256, so the window
+         asks for the one it needs instead of downscaling a 256px bitmap into a 16px title
+         bar. icon.svg is the editable master and icon-*.png are for Linux desktop entries
+         and the README; neither belongs inside the binary. -->
+    <AvaloniaResource Include="Assets\icon.ico" />
   </ItemGroup>
 
   <ItemGroup>

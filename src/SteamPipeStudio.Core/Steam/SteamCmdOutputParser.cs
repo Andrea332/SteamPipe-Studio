@@ -69,8 +69,32 @@ public static class SteamCmdOutputParser
     private static readonly Regex LoginFailed = new(
         @"FAILED\s*(?:login)?\s*(?:with\s+result\s+code)?\s*[:(]?\s*(?<reason>[A-Za-z ]+)", Options);
 
+    // Deliberately does not accept a bare "OK". steamcmd's own console log splits
+    // "Loading Steam API...OK" across two lines, and reading that lone OK as a completed
+    // login would announce a session that does not exist yet — and, worse, tell the
+    // runner to stop watching for the login prompt that is about to appear.
     private static readonly Regex LoginOk = new(
-        @"^\s*(?:Logged\s+in\s+OK|Waiting\s+for\s+(?:client\s+config|user\s+info)|OK\b)", Options);
+        @"^\s*(?:Logged\s+in\s+OK|Waiting\s+for\s+(?:client\s+config|user\s+info))", Options);
+
+    // "Logging in user 'x' [U:1:0] to Steam Public...OK" — the verdict is appended to the
+    // line that announces the attempt, so it has to be read before LoggingIn below.
+    private static readonly Regex LoginResultOk = new(
+        @"to\s+Steam\s+\S+\s*\.{2,}\s*OK\b", Options);
+
+    /// <summary>
+    /// The <c>[2026-08-21 16:12:10] </c> stamp steamcmd puts on every line of its own
+    /// console log. The log file is the only place some output — the password prompt
+    /// included — appears in time to be useful, so its lines go through this same parser;
+    /// without stripping the stamp first every pattern anchored to the start of a line
+    /// would silently stop matching.
+    /// </summary>
+    /// The negative lookahead is not decoration. steamcmd stamps its own build messages
+    /// too, and those read <c>[2026-08-21 16:27:42]: Starting AppID …</c> — a colon after
+    /// the bracket. In the log file such a line carries both stamps. Stripping the inner
+    /// one as well leaves the file's copy and the pipe's copy of the same message looking
+    /// different, and every one of them then prints twice.
+    private static readonly Regex LogTimestamp = new(
+        @"^\s*\[\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}\](?!:)\s?", Options);
 
     private static readonly Regex LoggingIn = new(
         @"Logging\s+in\s+user\s+'(?<user>[^']*)'", Options);
@@ -107,9 +131,15 @@ public static class SteamCmdOutputParser
     private static readonly Regex GenericError = new(
         @"^\s*(?:ERROR!?|FATAL|Fatal\s+Error)\b", Options);
 
+    /// <summary>
+    /// The same line without steamcmd's log stamp, used to recognise a line that arrives
+    /// on two channels — the console log writes it stamped, the pipe delivers it bare.
+    /// </summary>
+    public static string StripLogTimestamp(string line) => LogTimestamp.Replace(line.Trim(), string.Empty);
+
     public static SteamCmdEvent Parse(string line)
     {
-        var trimmed = line.Trim();
+        var trimmed = StripLogTimestamp(line);
         if (trimmed.Length == 0) return new SteamCmdEvent(SteamCmdEventKind.Raw, line);
 
         var success = BuildSucceeded.Match(trimmed);
@@ -139,6 +169,9 @@ public static class SteamCmdOutputParser
                 Detail: loginResult.Groups["reason"].Value.Trim() is { Length: > 0 } reason
                     ? reason
                     : trimmed);
+
+        if (LoginResultOk.IsMatch(trimmed))
+            return new SteamCmdEvent(SteamCmdEventKind.LoginSucceeded, line);
 
         var loggingIn = LoggingIn.Match(trimmed);
         if (loggingIn.Success)

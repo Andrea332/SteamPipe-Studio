@@ -74,6 +74,7 @@ internal static class Program
         OutputParsing();
         CiExport();
         Locator();
+        ConsoleLogDeduplication();
         Secrets();
         return Harness.Report();
     }
@@ -481,6 +482,48 @@ internal static class Program
         var loggedIn = SteamCmdOutputParser.Parse("Waiting for client config...OK");
         Harness.Equal("login success", SteamCmdEventKind.LoginSucceeded, loggedIn.Kind);
 
+        var loginOk = SteamCmdOutputParser.Parse(
+            "Logging in user 'someone' [U:1:0] to Steam Public...OK");
+        Harness.Equal("login success on the attempt line",
+            SteamCmdEventKind.LoginSucceeded, loginOk.Kind);
+
+        // steamcmd's console log is the only channel that carries some output in time to
+        // be useful, and every line of it is stamped. Anything anchored to the start of a
+        // line has to see through the stamp.
+        Harness.Equal("stamp stripped", "password:",
+            SteamCmdOutputParser.StripLogTimestamp("[2026-08-21 16:12:10] password:"));
+        Harness.Equal("unstamped line unchanged", "password:",
+            SteamCmdOutputParser.StripLogTimestamp("  password:  "));
+
+        // steamcmd stamps its own build messages, and those keep a colon after the
+        // bracket. Only the log file's outer stamp may go: strip the inner one too and
+        // the same message coming from the log and from the pipe stops matching, which
+        // prints the entire run twice.
+        Harness.Equal("steamcmd's own stamp is part of the message",
+            "[2026-08-21 16:27:07]: Starting AppID 2089870 build (flags 0x0).",
+            SteamCmdOutputParser.StripLogTimestamp(
+                "[2026-08-21 16:27:07]: Starting AppID 2089870 build (flags 0x0)."));
+        Harness.Equal("only the outer stamp is removed",
+            "[2026-08-21 16:27:07]: Starting AppID 2089870 build (flags 0x0).",
+            SteamCmdOutputParser.StripLogTimestamp(
+                "[2026-08-21 16:27:07] [2026-08-21 16:27:07]: Starting AppID 2089870 build (flags 0x0)."));
+
+        var stampedPrompt = SteamCmdOutputParser.Parse("[2026-08-21 16:12:10] password: ");
+        Harness.Equal("stamped password prompt still detected",
+            SteamCmdEventKind.LoginPrompt, stampedPrompt.Kind);
+
+        var stampedSuccess = SteamCmdOutputParser.Parse(
+            "[2026-08-21 15:06:42] Successfully finished AppID 4370990 build (BuildID 24862532).");
+        Harness.Equal("stamped success still detected",
+            SteamCmdEventKind.BuildSucceeded, stampedSuccess.Kind);
+
+        // The console log writes "Loading Steam API..." and "OK" as two lines. Reading
+        // that lone OK as a completed login would disarm the wait for the login prompt
+        // that is about to appear.
+        var lonelyOk = SteamCmdOutputParser.Parse("[2026-08-21 16:12:10] OK");
+        Harness.Check("a bare OK is not a login",
+            lonelyOk.Kind is not SteamCmdEventKind.LoginSucceeded, lonelyOk.Kind.ToString());
+
         var bootstrap = SteamCmdOutputParser.Parse("[  4%] Checking for available updates...");
         Harness.Equal("bootstrap progress", SteamCmdEventKind.Bootstrap, bootstrap.Kind);
         Harness.Equal("bootstrap percent", 4d, bootstrap.Percent);
@@ -563,6 +606,106 @@ internal static class Program
         Harness.Check("empty path reports an error", !SteamCmdLocator.TryLocate("", out _, out _));
 
         Directory.Delete(root, true);
+    }
+
+    private static void ConsoleLogDeduplication()
+    {
+        Console.WriteLine("== console log de-duplication ==");
+
+        // Verbatim from a real upload — AppID 2089870, build 24864138. steamcmd's console
+        // log carries the run as it happens; the pipe hands the same run over in one block
+        // at the end, with partial writes run together. Before the filter the panel
+        // printed all of it twice.
+        var fromLog = new[]
+        {
+            "[2026-08-21 16:27:04] Loading Steam API...",
+            "[2026-08-21 16:27:04] OK",
+            "[2026-08-21 16:27:04] Logging in user 'someone' [U:1:110886633] to Steam Public...",
+            "[2026-08-21 16:27:06] OK",
+            "[2026-08-21 16:27:06] Waiting for client config...",
+            "[2026-08-21 16:27:07] OK",
+            "[2026-08-21 16:27:07] [2026-08-21 16:27:07]: Starting AppID 2089870 build (flags 0x0).",
+            "[2026-08-21 16:27:07] [2026-08-21 16:27:07]: Building depot 2089871...",
+            "[2026-08-21 16:27:07] .",
+            "[2026-08-21 16:27:07] .",
+            "[2026-08-21 16:27:07]  23.1MB (23%)",
+            "[2026-08-21 16:27:42] [2026-08-21 16:27:42]: Successfully finished AppID 2089870 " +
+            "build (BuildID 24864138)."
+        };
+
+        var fromPipe = new[]
+        {
+            "Loading Steam API...OK",
+            "Logging in user 'someone' [U:1:110886633] to Steam Public...OK",
+            "Waiting for client config...OK",
+            "[2026-08-21 16:27:07]: Starting AppID 2089870 build (flags 0x0).",
+            "[2026-08-21 16:27:07]: Building depot 2089871...",
+            ".. 23.1MB (23%)",
+            "[2026-08-21 16:27:42]: Successfully finished AppID 2089870 build (BuildID 24864138)."
+        };
+
+        var filter = new SteamCmdRunner.DuplicateFilter();
+        foreach (var line in fromLog)
+            filter.ShouldSuppressLogLine(SteamCmdOutputParser.StripLogTimestamp(line));
+
+        var leaked = fromPipe
+            .Where(line => !filter.ShouldSuppressPipeLine(SteamCmdOutputParser.StripLogTimestamp(line)))
+            .ToList();
+
+        Harness.Equal("no pipe line escapes the filter", 0, leaked.Count);
+        foreach (var line in leaked) Console.WriteLine("        leaked: " + line);
+
+        // The other order, and it happens on every successful upload: at shutdown the
+        // pipe flushes the joined line as the process exits, and the log tail delivers
+        // the same message in pieces one poll later.
+        var atShutdown = new SteamCmdRunner.DuplicateFilter();
+        Harness.Equal("the pipe's joined line is shown", false,
+            atShutdown.ShouldSuppressPipeLine("Unloading Steam API...OK"));
+        Harness.Equal("the log's first piece is dropped", true,
+            atShutdown.ShouldSuppressLogLine("Unloading Steam API..."));
+        Harness.Equal("the log's second piece is dropped", true,
+            atShutdown.ShouldSuppressLogLine("OK"));
+        Harness.Equal("and the entry is spent", false,
+            atShutdown.ShouldSuppressLogLine("OK"));
+
+        // And the interleaved order, which is what a real run actually does: the log's
+        // first half, then the pipe's joined line, then the log's second half.
+        var interleaved = new SteamCmdRunner.DuplicateFilter();
+        Harness.Equal("the log's first half is shown", false,
+            interleaved.ShouldSuppressLogLine("Unloading Steam API..."));
+        Harness.Equal("the pipe's joined line is dropped", true,
+            interleaved.ShouldSuppressPipeLine("Unloading Steam API...OK"));
+        Harness.Equal("the log's second half is still shown", false,
+            interleaved.ShouldSuppressLogLine("OK"));
+
+        // The cut-short match only applies at the end of what the log has produced. A
+        // pipe line that diverges in the middle of the chain is different output and has
+        // to be shown.
+        var diverging = new SteamCmdRunner.DuplicateFilter();
+        diverging.ShouldSuppressLogLine("Scanning content");
+        diverging.ShouldSuppressLogLine("Uploading content...");
+        Harness.Equal("a line that breaks the chain is kept", false,
+            diverging.ShouldSuppressPipeLine("Scanning content and then something else"));
+
+        // Genuinely new output must survive. A line the log never produced is not a
+        // duplicate, however similar it looks.
+        var fresh = new SteamCmdRunner.DuplicateFilter();
+        fresh.ShouldSuppressLogLine("Uploading content...");
+        Harness.Equal("an unseen line is kept", false,
+            fresh.ShouldSuppressPipeLine("Scanning content"));
+        Harness.Equal("the seen line is claimed", true,
+            fresh.ShouldSuppressPipeLine("Uploading content..."));
+        Harness.Equal("and only once", false,
+            fresh.ShouldSuppressPipeLine("Uploading content..."));
+
+        // Progress repeats the same text constantly; each occurrence has to cancel
+        // exactly one, or the second half of an upload stops being displayed.
+        var repeated = new SteamCmdRunner.DuplicateFilter();
+        repeated.ShouldSuppressLogLine(".");
+        repeated.ShouldSuppressLogLine(".");
+        Harness.Equal("first repeat claimed", true, repeated.ShouldSuppressPipeLine("."));
+        Harness.Equal("second repeat claimed", true, repeated.ShouldSuppressPipeLine("."));
+        Harness.Equal("third is a new line", false, repeated.ShouldSuppressPipeLine("."));
     }
 
     private static void Secrets()
