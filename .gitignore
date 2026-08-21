@@ -70,3 +70,11 @@ steam_tokens.json
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ---------------------------------------------------------------------------
+# Release archives
+# ---------------------------------------------------------------------------
+# Staging area for the files attached to a GitHub release. They are build output,
+# roughly 42 MB per release, and GitHub stores release assets outside the git
+# object database precisely so a clone does not have to carry every past build.
+dist/

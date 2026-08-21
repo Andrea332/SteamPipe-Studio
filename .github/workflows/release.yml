@@ -1,0 +1,89 @@
+name: Release
+
+# A release is cut by pushing a tag, and only by pushing a tag. The tag name is
+# the single source of truth for the version: a release cannot exist without one,
+# and the binaries cannot claim a version the tag does not carry.
+on:
+  push:
+    tags:
+      - "v*"
+
+# The default token is read-only. Creating a release writes to the repository.
+permissions:
+  contents: write
+
+env:
+  PROJECT: src/SteamPipeStudio.App
+  RIDS: win-x64 osx-arm64 osx-x64 linux-x64
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The SDK version is read from global.json instead of being repeated here.
+      # Stating it in two places means the two drift, and the drift surfaces on a
+      # release day rather than on an ordinary one.
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # v1.2.0 -> 1.2.0. The tag keeps the v by convention; MSBuild rejects it.
+      - name: Derive version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      # A red suite has to stop the run before a single asset is uploaded: a
+      # published release is much harder to retract than a failed build.
+      - name: Test
+        run: dotnet run --project src/SteamPipeStudio.Tests
+
+      # -p:Version stamps the tag into the assembly, so the version the app
+      # reports and the version on the release cannot disagree. -p:DebugType=none
+      # keeps the .pdb files out of the archives: symbols nobody downloading a
+      # release asked for.
+      - name: Publish every runtime identifier
+        run: |
+          for RID in $RIDS; do
+            echo "::group::$RID"
+            dotnet publish "$PROJECT" -c Release -r "$RID" \
+              -p:PublishSingleFile=true --self-contained false \
+              -p:Version="$VERSION" -p:DebugType=none \
+              -o "out/$RID"
+            echo "::endgroup::"
+          done
+
+      # zip for Windows, tar.gz for everything else. Not a stylistic choice: the
+      # zip format has nowhere to record a Unix permission bit, so a Linux or
+      # macOS binary shipped inside one arrives without +x and will not start.
+      #
+      # --mode and --owner are set explicitly rather than inherited from the
+      # working tree. On this runner the bit would already be right, but stating
+      # it makes the archive identical whatever produced the tree -- and a tree
+      # produced on Windows has no execute bit at all to inherit, because NTFS
+      # cannot store one.
+      - name: Package
+        run: |
+          mkdir -p dist
+          (cd "out/win-x64" && zip -r "$GITHUB_WORKSPACE/dist/SteamPipeStudio-$VERSION-win-x64.zip" .)
+          for RID in $RIDS; do
+            case "$RID" in win-*) continue ;; esac
+            tar --mode=755 --owner=root --group=root \
+              -czf "dist/SteamPipeStudio-$VERSION-$RID.tar.gz" -C "out/$RID" .
+          done
+          ls -l dist
+          tar -tvzf "dist/SteamPipeStudio-$VERSION-linux-x64.tar.gz"
+
+      # Draft, not published. The notes are generated from the commits since the
+      # previous tag and deserve a read before anyone else gets them; publishing
+      # stays a deliberate human click.
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --draft \
+            --generate-notes \
+            --title "SteamPipe Studio $VERSION" \
+            dist/*
