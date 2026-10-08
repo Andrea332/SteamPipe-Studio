@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- TargetFramework, Nullable, LangVersion and $(AvaloniaVersion) come from
+       Directory.Build.props at the repository root.
+
+       Renders the app's real main window without a screen, with placeholder projects,
+       into the PNG at the top of the README. It is run by .github/workflows/screenshot.yml
+       whenever a release is published, so the picture never falls behind the app. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>SteamPipeStudio.Screenshots</AssemblyName>
+    <RootNamespace>SteamPipeStudio.Screenshots</RootNamespace>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Headless" Version="$(AvaloniaVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SteamPipeStudio.App\SteamPipeStudio.App.csproj" />
+  </ItemGroup>
+
+</Project>

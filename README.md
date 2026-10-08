@@ -11,7 +11,7 @@ Steam.
 
 Not affiliated with or endorsed by Valve.
 
-![SteamPipe Studio — the Project tab: name and App ID, content and build-output folders, the Steam account with its optional saved password, and the branch to set live after an upload](docs/showcase.png)
+![SteamPipe Studio — the Project tab of a placeholder project: name and App ID, content and build-output folders, the Steam account with its optional saved password, and the branch to set live after an upload](docs/showcase.png)
 
 ## What it does
 
@@ -189,10 +189,22 @@ src/SteamPipeStudio.Core/     no UI dependencies, no NuGet packages at all
 ├── Security/                 per-platform secret storage
 └── Ci/                       GitHub Actions export
 
-src/SteamPipeStudio.App/      Avalonia 11, MVVM, the only project with packages
+src/SteamPipeStudio.App/      Avalonia 11, MVVM, Velopack for installing and updating
 src/SteamPipeStudio.Tests/    zero-dependency test harness
+src/SteamPipeStudio.Screenshots/  renders the README screenshot without a screen
 build-scripts/                publish all four platforms from any host
+docs/release-notes/           the notes every release ships with, one file per tag
 .github/workflows/            release.yml — tag, test, package with Velopack, draft release
+                              screenshot.yml — refresh the README screenshot on publish
+```
+
+The screenshot at the top of this page is not taken by hand. `SteamPipeStudio.Screenshots`
+builds the real main window from the real XAML, fills it with placeholder projects and
+draws it with Skia at twice the resolution, without a display; `screenshot.yml` runs it
+whenever a release is published and commits the image if it changed. To redraw it locally:
+
+```bash
+dotnet run --project src/SteamPipeStudio.Screenshots -c Release -- docs/showcase.png
 ```
 
 `TargetFramework` and `$(AvaloniaVersion)` live in `Directory.Build.props` at the root,
@@ -334,6 +346,10 @@ also the moment every installed copy starts offering the update, because the upd
 never sees drafts. To try a release before that click, download its files from the draft
 into a folder and start an older installed or portable copy with
 `STEAMPIPESTUDIO_UPDATE_FEED` pointing at that folder.
+
+Publishing also starts `.github/workflows/screenshot.yml`, which redraws the screenshot at
+the top of this page from the released code and commits it to `main` when the UI has
+changed — after a release, pull before your next commit.
 
 To re-run one platform's failed job, delete that platform's `releases.<channel>.json` from
 the draft first: the upload refuses to add a channel the draft already has.

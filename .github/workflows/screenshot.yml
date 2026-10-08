@@ -1,0 +1,56 @@
+name: Screenshot
+
+# The picture at the top of the README is rendered from the app itself, so it cannot
+# fall behind the app: whenever a release is published, that release's main window is
+# drawn without a screen, filled with placeholder projects, and committed to main if
+# it changed. It can also be run by hand from the Actions tab, which draws main.
+#
+# Triggered by publishing, not by the tag: the release workflow only opens a draft,
+# and the README should show what people can actually download.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# Committing the image writes to the repository.
+permissions:
+  contents: write
+
+jobs:
+  screenshot:
+    runs-on: ubuntu-latest
+    steps:
+      # The image is committed to main...
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      # ...but drawn from the code of the release being published, which main may
+      # have moved past by the time someone presses Publish.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.sha }}
+          path: released
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: released/global.json
+
+      - name: Render the screenshot
+        run: |
+          dotnet run --project released/src/SteamPipeStudio.Screenshots -c Release -- \
+            docs/showcase.png "${{ github.event.release.tag_name || 'main' }}"
+
+      # The placeholders and their dates are fixed, so a release that does not touch
+      # the UI renders the same bytes and there is nothing to commit.
+      - name: Commit it if it changed
+        run: |
+          if git diff --quiet -- docs/showcase.png; then
+            echo "The screenshot is unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/showcase.png
+          git commit -m "Refresh the README screenshot for ${{ github.event.release.tag_name || 'main' }}"
+          git push origin HEAD:main
