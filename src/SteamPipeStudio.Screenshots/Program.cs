@@ -45,7 +45,8 @@ internal static class Program
 
             var window = new MainWindow();
             window.DataContext = new MainWindowViewModel(store, store.LoadSettings(), window,
-                                                         new PlaceholderUpdater(version));
+                                                         new PlaceholderUpdater(version),
+                                                         Placeholders.CreateSecrets());
             window.Show();
             Dispatcher.UIThread.RunJobs();
 

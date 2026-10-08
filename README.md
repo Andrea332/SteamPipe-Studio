@@ -11,7 +11,7 @@ Steam.
 
 Not affiliated with or endorsed by Valve.
 
-![SteamPipe Studio — the Project tab of a placeholder project: name and App ID, the app/game build and upload logs/VDF folders, the Steam account with its optional saved password, and the branch to set live after an upload](docs/showcase.png)
+![SteamPipe Studio — the Project tab of a placeholder project: name and App ID, the app/game build and upload logs/VDF folders, the Steam account with its optional saved password, the branch to set live after an upload, and the project's optional Web API key](docs/showcase.png)
 
 ## What it does
 

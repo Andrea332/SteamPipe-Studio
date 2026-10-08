@@ -24,12 +24,18 @@ public sealed class MainWindowViewModel : ViewModelBase
     private bool _isSettingsOpen;
     private string _status = "Ready.";
 
-    public MainWindowViewModel(ProfileStore store, AppSettings settings, Window owner, IAppUpdater updater)
+    /// <param name="secrets">
+    /// Where passwords and keys are kept; the platform's own store when omitted. On macOS
+    /// and Linux that is the user's keychain or keyring, shared by every copy of the app, so
+    /// a tool that draws the window with made-up data passes its own.
+    /// </param>
+    public MainWindowViewModel(ProfileStore store, AppSettings settings, Window owner, IAppUpdater updater,
+                               ISecretStore? secrets = null)
     {
         _store = store;
         _settings = settings;
         _prompt = new UiPrompt(owner);
-        _secrets = SecretStoreFactory.Create(store.RootDirectory);
+        _secrets = secrets ?? SecretStoreFactory.Create(store.RootDirectory);
 
         Profiles = new ObservableCollection<ProfileViewModel>(
             store.LoadProfiles().Select(p => new ProfileViewModel(p, _secrets)));

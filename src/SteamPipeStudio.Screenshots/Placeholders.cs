@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using SteamPipeStudio.Core.Model;
+using SteamPipeStudio.Core.Security;
 
 namespace SteamPipeStudio.Screenshots;
 
@@ -49,5 +51,26 @@ internal static class Placeholders
         });
 
         return store;
+    }
+
+    /// <summary>
+    /// Secrets held in memory, never the machine's: on macOS and Linux the real store is the
+    /// user's keychain, where a placeholder key would replace their own. It holds a global
+    /// API key, so the projects show the ordinary state of using it rather than a warning.
+    /// </summary>
+    public static ISecretStore CreateSecrets()
+    {
+        var secrets = new MemorySecrets();
+        secrets.Write(SecretStoreFactory.PublisherApiKey, "placeholder");
+        return secrets;
+    }
+
+    private sealed class MemorySecrets : ISecretStore
+    {
+        private readonly Dictionary<string, string> _values = new();
+
+        public string? Read(string name) => _values.GetValueOrDefault(name);
+        public void Write(string name, string value) => _values[name] = value;
+        public void Delete(string name) => _values.Remove(name);
     }
 }
