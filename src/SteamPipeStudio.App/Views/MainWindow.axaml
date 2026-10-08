@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:SteamPipeStudio.App.ViewModels"
+        xmlns:v="using:SteamPipeStudio.App.Views"
         xmlns:steam="using:SteamPipeStudio.Core.Steam"
         x:DataType="vm:MainWindowViewModel"
         x:Class="SteamPipeStudio.App.Views.MainWindow"
@@ -22,7 +23,60 @@
     <Style Selector="TextBlock.muted">
       <Setter Property="Foreground" Value="{DynamicResource LogMuted}" />
     </Style>
+
+    <!-- A disabled button is exactly when its tooltip matters most: it is where the
+         reason it cannot be pressed is written. -->
+    <Style Selector="Button">
+      <Setter Property="ToolTip.ShowOnDisabled" Value="True" />
+    </Style>
+
+    <!-- A field's label with its info icon. The tooltip sits on the pair, so the label
+         and the icon open the same explanation. -->
+    <Style Selector="StackPanel.labelled">
+      <Setter Property="Orientation" Value="Horizontal" />
+      <Setter Property="Spacing" Value="6" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,0,8,0" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="StackPanel.labelled > TextBlock">
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
   </Window.Styles>
+
+  <!-- Explanations live in tooltips rather than in lines of text under the fields, so
+       the forms stay compact and the help is there when the pointer rests on a field;
+       an "i" marks the places that have one. Kept here because several share one
+       text: a field and its label, or the same idea on two tabs. Lines that report
+       state — what was found, saved, uploaded — stay visible: they are not
+       explanations. -->
+  <Window.Resources>
+    <x:String x:Key="TipProjectName">Your name for this project, shown in the list on the left. Never sent to Steam.</x:String>
+    <x:String x:Key="TipAppId">The App ID Steamworks assigned to your game. It is the number in the address of the app's pages in the Steamworks admin panel.</x:String>
+    <x:String x:Key="TipDescription">A note shown next to this build in the Steamworks admin panel and on the Builds tab, so builds can be told apart — the version number, for example.</x:String>
+    <x:String x:Key="TipBuildFolder">The folder with the built game, exactly as players should get it: the executable and everything next to it. The depots on the Depots tab take their files from here, and Preview contents on the Upload tab shows what would be uploaded.</x:String>
+    <x:String x:Key="TipUploadLogs">Where steamcmd's logs, the generated .vdf scripts and its chunk cache go. Keep it outside the app/game build folder, or they end up inside your game. Deleting it breaks nothing: the next upload is just slower.</x:String>
+    <x:String x:Key="TipAccount">The Steam account steamcmd logs in with. It needs upload rights for this app in Steamworks.</x:String>
+    <x:String x:Key="TipPassword">Optional. steamcmd logs in with the session it remembers and asks for the password only when that session has expired; leave this empty to be asked then. A saved password answers that question for you; Steam Guard still asks for its code when its own session expires. Never written to the project file and never put on a command line: it goes to the same encrypted store as the API key, and only ever to steamcmd's input.</x:String>
+    <x:String x:Key="TipCheckPassword">Logs in to Steam and straight out again with the password typed here, to see whether Steam accepts it — so a new password can be tried before saving it. Available once a password is typed. If you are still logged in to Steam from last time, Steam does not ask for the password, and it cannot be checked until that login expires. The log is on the Upload tab.</x:String>
+    <x:String x:Key="TipProjectApiKey">Optional. A publisher Web API key for this project only, which the Builds tab uses instead of the one in Settings. A key belongs to one Steamworks partner, so a project whose app another partner publishes needs its own. Kept in the encrypted store, never in the project file; Duplicate copies it to the new project, Delete removes it.</x:String>
+    <x:String x:Key="TipSetLive">Beta branches only, and only after a successful upload. Steam will not let a build script publish to the default branch: use Set selected build live on the Builds tab for that. Leave it empty to upload without publishing.</x:String>
+    <x:String x:Key="TipPreview">steamcmd checks and builds everything but uploads nothing: a safe way to try a new configuration.</x:String>
+    <x:String x:Key="TipVerbose">steamcmd writes much more detail to the log. Turn it on when an upload fails and the reason is not clear.</x:String>
+    <x:String x:Key="TipDepotId">Depot IDs come from the Steamworks admin panel, and are usually allocated just above the App ID.</x:String>
+    <x:String x:Key="TipDepotLabel">Your name for this depot, shown in its header. Never sent to Steam.</x:String>
+    <x:String x:Key="TipDepotEnabled">Unchecked depots are left out of the upload but keep their settings.</x:String>
+    <x:String x:Key="TipDepotContentRoot">Optional. A different folder for this depot only — for example the Linux build next to the Windows one. Empty means the project's app/game build folder.</x:String>
+    <x:String x:Key="TipFileMappings">Each mapping picks files for this depot. Local path is relative to the depot's folder and may contain * or ?. Depot path is where the files land inside the installed game; use . for its root. Recursive applies the wildcard in subfolders too.</x:String>
+    <x:String x:Key="TipExclusions">Patterns removed from this depot at any depth, for example *.pdb, or bin/tools* for a whole subfolder.</x:String>
+    <x:String x:Key="TipInstallScript">Optional. A Steam install script (.vdf) inside the depot's folder, which Steam runs when players install the game — to install a redistributable, for example.</x:String>
+    <x:String x:Key="TipDownloadFor">Which platform's files the Download buttons fetch. Leave it on this machine unless you want to look at another platform's build.</x:String>
+    <x:String x:Key="TipSdk">The sdk/tools/ContentBuilder folder of the Steamworks SDK. The SDK folder itself, or its tools folder, work too: the line below says where steamcmd was found.</x:String>
+    <x:String x:Key="TipConfirmSetLive">Ask before setting a build live on a beta branch. Publishing to the default branch always asks, whatever this is set to.</x:String>
+    <x:String x:Key="TipCheckAtStartup">Looks for a newer release on GitHub when the app starts. An update is only ever offered: it installs when you click the button, never during an upload, and your projects and saved passwords are kept.</x:String>
+    <x:String x:Key="TipInstallUpdate">Downloads the new version, saves your projects and restarts into it. Unavailable while steamcmd is running, so an upload is never cut short.</x:String>
+    <x:String x:Key="TipBrowse">Choose the folder.</x:String>
+  </Window.Resources>
 
   <Grid ColumnDefinitions="260,*" RowDefinitions="*,Auto">
 
@@ -30,25 +84,42 @@
     <Border Grid.Row="0" Grid.Column="0" Background="{DynamicResource SidebarBackground}">
       <DockPanel Margin="12">
 
-        <TextBlock DockPanel.Dock="Top" Text="Projects" Classes="h1" />
-
-        <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,12,0,0">
+        <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,16">
           <Button Content="New project" Command="{Binding NewProfileCommand}"
-                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
-          <Button Content="Import app_build.vdf…" Command="{Binding ImportScriptCommand}"
                   HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                  ToolTip.Tip="Read an existing SteamPipe script, including its depot files." />
-          <Grid ColumnDefinitions="*,6,*">
-            <Button Grid.Column="0" Content="Duplicate" Command="{Binding DuplicateProfileCommand}"
-                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
-            <Button Grid.Column="2" Content="Delete" Command="{Binding DeleteProfileCommand}"
-                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
-          </Grid>
+                  ToolTip.Tip="Creates an empty project." />
+          <!-- Double underscore: a single one marks the access key and would vanish from
+               the label, leaving "appbuild.vdf". -->
+          <Button Content="Import app__build.vdf…" Command="{Binding ImportScriptCommand}"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                  ToolTip.Tip="Turns an existing SteamPipe build script into a project, depot scripts included." />
         </StackPanel>
+
+        <!-- The app's settings belong to no project, so they sit apart, at the very bottom,
+             and open in place of the project tabs. -->
+        <StackPanel DockPanel.Dock="Bottom" Spacing="12" Margin="0,12,0,0">
+          <Border Height="1" Background="{DynamicResource InfoIconBrush}" Opacity="0.35" />
+          <ToggleButton Content="Settings" IsChecked="{Binding IsSettingsOpen, Mode=TwoWay}"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                        ToolTip.Tip="The app's own settings, the same for every project: the Steamworks SDK, the publisher Web API key, the theme and updates. Click a project to go back to it." />
+        </StackPanel>
+
+        <!-- Under the list they act on, and only enabled while a project is selected. -->
+        <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,6,*" Margin="0,12,0,0">
+          <Button Grid.Column="0" Content="Duplicate" Command="{Binding DuplicateProfileCommand}"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                  ToolTip.Tip="Copies the selected project — to upload the same game to a demo or a second app, for example. Available once a project is selected." />
+          <Button Grid.Column="2" Content="Delete" Command="{Binding DeleteProfileCommand}"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                  ToolTip.Tip="Removes the selected project from this app. Nothing on Steam and no game files are touched. Available once a project is selected." />
+        </Grid>
+
+        <TextBlock DockPanel.Dock="Top" Text="Projects" Classes="h1" />
 
         <ListBox ItemsSource="{Binding Profiles}"
                  SelectedItem="{Binding SelectedProfile, Mode=TwoWay}"
-                 Background="Transparent">
+                 Background="Transparent"
+                 Tapped="OnProjectTapped">
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="vm:ProfileViewModel">
               <StackPanel Spacing="2" Margin="0,4">
@@ -65,90 +136,186 @@
     <!-- ============================ Content ============================ -->
     <Panel Grid.Row="0" Grid.Column="1">
 
-      <TextBlock Text="Create or import a project to get started."
-                 HorizontalAlignment="Center" VerticalAlignment="Center"
-                 Opacity="0.5"
-                 IsVisible="{Binding !HasProfile}" />
+      <!-- With no project there is nothing for the tabs to show, so the space says what
+           to do instead. -->
+      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10"
+                  MaxWidth="440" IsVisible="{Binding ShowEmptyState}">
+        <TextBlock Text="{Binding EmptyTitle}" Classes="h1" HorizontalAlignment="Center" />
+        <TextBlock Text="{Binding EmptyHint}" Classes="hint" FontSize="14"
+                   TextAlignment="Center" TextWrapping="Wrap" />
+      </StackPanel>
 
-      <TabControl Margin="12,8,12,0" IsVisible="{Binding HasProfile}">
+      <TabControl Margin="12,8,12,0" IsVisible="{Binding ShowProjectTabs}">
 
         <!-- ============================ Project ============================ -->
         <TabItem Header="Project">
           <ScrollViewer>
-            <StackPanel Margin="4,12,12,12" DataContext="{Binding SelectedProfile}" x:DataType="vm:ProfileViewModel">
+            <!-- The label columns of the cards share one width, that of the widest label,
+                 so the fields line up and none of the labels is cut off. -->
+            <StackPanel Margin="4,12,12,12" DataContext="{Binding SelectedProfile}" x:DataType="vm:ProfileViewModel"
+                        Grid.IsSharedSizeScope="True">
 
               <Border Classes="card">
-                <Grid ColumnDefinitions="150,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
 
-                  <TextBlock Grid.Row="0" Grid.Column="0" Text="Project name" Classes="label" />
+                  <StackPanel Grid.Row="0" Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipProjectName}">
+                    <v:InfoIcon />
+                    <TextBlock Text="Project name" />
+                  </StackPanel>
                   <TextBox Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,8"
-                           Text="{Binding Name, Mode=TwoWay}" />
+                           Text="{Binding Name, Mode=TwoWay}"
+                           ToolTip.Tip="{StaticResource TipProjectName}" />
 
-                  <TextBlock Grid.Row="1" Grid.Column="0" Text="App ID" Classes="label" />
+                  <StackPanel Grid.Row="1" Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipAppId}">
+                    <v:InfoIcon />
+                    <TextBlock Text="App ID" />
+                  </StackPanel>
                   <TextBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,8"
                            Text="{Binding AppIdText, Mode=TwoWay}"
-                           Watermark="The App ID assigned in Steamworks" />
+                           Watermark="The App ID assigned in Steamworks"
+                           ToolTip.Tip="{StaticResource TipAppId}" />
 
-                  <TextBlock Grid.Row="2" Grid.Column="0" Text="Build description" Classes="label" />
+                  <StackPanel Grid.Row="2" Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipDescription}">
+                    <v:InfoIcon />
+                    <TextBlock Text="Build description" />
+                  </StackPanel>
                   <TextBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,8"
                            Text="{Binding Description, Mode=TwoWay}"
-                           Watermark="Shown next to the build in the Steamworks admin panel" />
+                           Watermark="Shown next to the build in the Steamworks admin panel"
+                           ToolTip.Tip="{StaticResource TipDescription}" />
 
-                  <TextBlock Grid.Row="3" Grid.Column="0" Text="Content folder" Classes="label" />
+                  <StackPanel Grid.Row="3" Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipBuildFolder}">
+                    <v:InfoIcon />
+                    <TextBlock Text="App/Game build folder" />
+                  </StackPanel>
                   <TextBox Grid.Row="3" Grid.Column="1" Margin="0,0,8,8"
-                           Text="{Binding ContentRoot, Mode=TwoWay}" />
+                           Text="{Binding ContentRoot, Mode=TwoWay}"
+                           ToolTip.Tip="{StaticResource TipBuildFolder}" />
                   <Button Grid.Row="3" Grid.Column="2" Content="Browse…" Margin="0,0,0,8"
-                          Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).BrowseContentRootCommand}" />
+                          Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).BrowseContentRootCommand}"
+                          ToolTip.Tip="{StaticResource TipBrowse}" />
 
-                  <TextBlock Grid.Row="4" Grid.Column="0" Text="Build output" Classes="label" />
-                  <TextBox Grid.Row="4" Grid.Column="1" Margin="0,0,8,4"
-                           Text="{Binding BuildOutput, Mode=TwoWay}" />
-                  <Button Grid.Row="4" Grid.Column="2" Content="Browse…" Margin="0,0,0,4"
-                          Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).BrowseBuildOutputCommand}" />
-
-                  <TextBlock Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2" Classes="hint"
-                             Text="Logs and the chunk cache land here. Keep it outside the content folder, or the cache ends up inside your game." />
+                  <StackPanel Grid.Row="4" Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipUploadLogs}">
+                    <v:InfoIcon />
+                    <TextBlock Text="Upload logs/VDF folder" />
+                  </StackPanel>
+                  <TextBox Grid.Row="4" Grid.Column="1" Margin="0,0,8,0"
+                           Text="{Binding BuildOutput, Mode=TwoWay}"
+                           ToolTip.Tip="{StaticResource TipUploadLogs}" />
+                  <Button Grid.Row="4" Grid.Column="2" Content="Browse…"
+                          Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).BrowseBuildOutputCommand}"
+                          ToolTip.Tip="{StaticResource TipBrowse}" />
 
                 </Grid>
               </Border>
 
               <Border Classes="card">
-                <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
 
-                  <TextBlock Grid.Row="0" Grid.Column="0" Text="Steam account" Classes="label" />
-                  <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,4"
+                  <StackPanel Grid.Row="0" Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipAccount}">
+                    <v:InfoIcon />
+                    <TextBlock Text="Steam account" />
+                  </StackPanel>
+                  <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,8"
                            Text="{Binding SteamAccountName, Mode=TwoWay}"
-                           Watermark="Account with upload rights for this app" />
+                           Watermark="Account with upload rights for this app"
+                           ToolTip.Tip="{StaticResource TipAccount}" />
 
-                  <TextBlock Grid.Row="1" Grid.Column="0" Text="Password" Classes="label" />
-                  <Grid Grid.Row="1" Grid.Column="1" ColumnDefinitions="*,8,Auto,8,Auto" Margin="0,0,0,4">
+                  <StackPanel Grid.Row="1" Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipPassword}">
+                    <v:InfoIcon />
+                    <TextBlock Text="Password" />
+                  </StackPanel>
+                  <Grid Grid.Row="1" Grid.Column="1" ColumnDefinitions="*,6,Auto,6,Auto,6,Auto" Margin="0,0,0,4">
                     <TextBox Grid.Column="0" PasswordChar="•"
                              Text="{Binding PasswordInput, Mode=TwoWay}"
-                             Watermark="Optional — leave empty to be asked when needed" />
-                    <Button Grid.Column="2" Content="Save" Command="{Binding SavePasswordCommand}" />
-                    <Button Grid.Column="4" Content="Remove" Command="{Binding ClearPasswordCommand}" />
+                             Watermark="{Binding PasswordWatermark}"
+                             ToolTip.Tip="{StaticResource TipPassword}" />
+                    <Button Grid.Column="2" Content="Check"
+                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).CheckPasswordCommand}"
+                            ToolTip.Tip="{StaticResource TipCheckPassword}" />
+                    <Button Grid.Column="4" Content="Save" Command="{Binding SavePasswordCommand}"
+                            ToolTip.Tip="Saves the password typed here in the encrypted store, so uploads log in without asking." />
+                    <Button Grid.Column="6" Content="Remove" Command="{Binding ClearPasswordCommand}"
+                            ToolTip.Tip="Deletes the saved password. steamcmd then asks for it when it needs it." />
                   </Grid>
 
-                  <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                    <TextBlock Classes="hint" Text="{Binding PasswordSummary}" />
-                    <TextBlock Classes="hint" Text="{Binding PasswordStatus}"
-                               Foreground="{DynamicResource LogSuccess}"
+                  <!-- State, not explanation, so it stays on screen: green when a password
+                       is saved, red when not, and next to it the outcome of Check or what
+                       stopped the last Save. Full opacity, unlike other hints, so the
+                       colour reads. -->
+                  <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="0,0,0,8">
+                    <TextBlock Classes="hint" Opacity="1" Text="{Binding PasswordState}"
+                               Classes.ok="{Binding HasStoredPassword}"
+                               Classes.error="{Binding !HasStoredPassword}" />
+                    <TextBlock Classes="hint" Opacity="1" Text="{Binding PasswordStatus}"
+                               Classes.ok="{Binding PasswordStatusIsGood}"
+                               Classes.error="{Binding PasswordStatusIsBad}"
+                               Classes.warn="{Binding PasswordStatusIsWarning}"
                                IsVisible="{Binding PasswordStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                   </StackPanel>
-                  <TextBlock Grid.Row="3" Grid.Column="1" Classes="hint" Margin="0,0,0,10"
-                             Text="Never written to the project file and never put on a command line: it goes to the same encrypted store as the API key, and is handed to steamcmd's input only when it asks." />
 
-                  <TextBlock Grid.Row="4" Grid.Column="0" Text="Set live on branch" Classes="label" />
-                  <TextBox Grid.Row="4" Grid.Column="1" Margin="0,0,0,4"
+                  <StackPanel Grid.Row="3" Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipSetLive}">
+                    <v:InfoIcon />
+                    <TextBlock Text="Set live on branch" />
+                  </StackPanel>
+                  <TextBox Grid.Row="3" Grid.Column="1" Margin="0,0,0,12"
                            Text="{Binding SetLiveBranch, Mode=TwoWay}"
-                           Watermark="Leave empty to upload without publishing" />
+                           Watermark="Leave empty to upload without publishing"
+                           ToolTip.Tip="{StaticResource TipSetLive}" />
 
-                  <TextBlock Grid.Row="5" Grid.Column="1" Classes="hint" Margin="0,0,0,10"
-                             Text="Beta branches only. Steam will not let a build script publish to the default branch — use the Builds tab for that." />
+                  <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Spacing="20">
+                    <StackPanel Classes="labelled" Margin="0" ToolTip.Tip="{StaticResource TipPreview}">
+                      <v:InfoIcon />
+                      <CheckBox Content="Preview build (upload nothing)" IsChecked="{Binding Preview, Mode=TwoWay}" />
+                    </StackPanel>
+                    <StackPanel Classes="labelled" Margin="0" ToolTip.Tip="{StaticResource TipVerbose}">
+                      <v:InfoIcon />
+                      <CheckBox Content="Verbose steamcmd output" IsChecked="{Binding Verbose, Mode=TwoWay}" />
+                    </StackPanel>
+                  </StackPanel>
 
-                  <StackPanel Grid.Row="6" Grid.Column="1" Orientation="Horizontal" Spacing="20">
-                    <CheckBox Content="Preview build (upload nothing)" IsChecked="{Binding Preview, Mode=TwoWay}" />
-                    <CheckBox Content="Verbose steamcmd output" IsChecked="{Binding Verbose, Mode=TwoWay}" />
+                </Grid>
+              </Border>
+
+              <Border Classes="card">
+                <Grid RowDefinitions="Auto,Auto">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+
+                  <StackPanel Grid.Row="0" Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipProjectApiKey}">
+                    <v:InfoIcon />
+                    <TextBlock Text="Web API key" />
+                  </StackPanel>
+                  <Grid Grid.Row="0" Grid.Column="1" ColumnDefinitions="*,6,Auto,6,Auto" Margin="0,0,0,4">
+                    <TextBox Grid.Column="0" PasswordChar="•"
+                             Text="{Binding ApiKeyInput, Mode=TwoWay}"
+                             Watermark="{Binding ApiKeyWatermark}"
+                             ToolTip.Tip="{StaticResource TipProjectApiKey}" />
+                    <Button Grid.Column="2" Content="Save" Command="{Binding SaveApiKeyCommand}"
+                            ToolTip.Tip="Saves the key pasted here for this project only, in the encrypted store." />
+                    <Button Grid.Column="4" Content="Remove" Command="{Binding ClearApiKeyCommand}"
+                            ToolTip.Tip="Deletes this project's own key. The project then uses the key in Settings." />
+                  </Grid>
+
+                  <!-- Green with a key of its own, plain when it borrows the one in Settings,
+                       red when there is no key at all; then what stopped the last Save. -->
+                  <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                    <TextBlock Classes="hint" Opacity="1" Text="{Binding ApiKeyState}"
+                               Classes.ok="{Binding ApiKeyStateIsGood}"
+                               Classes.error="{Binding ApiKeyStateIsBad}" />
+                    <TextBlock Classes="hint warn" Opacity="1" Text="{Binding ApiKeyStatus}"
+                               IsVisible="{Binding ApiKeyStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                   </StackPanel>
 
                 </Grid>
@@ -156,13 +323,14 @@
 
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <Button Content="Save"
-                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SaveProfileCommand}" />
+                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SaveProfileCommand}"
+                        ToolTip.Tip="Saves this project now. Projects are also saved when you switch to another one and when the app closes." />
                 <Button Content="Export .vdf scripts…"
                         Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ExportScriptsCommand}"
-                        ToolTip.Tip="Write the generated app and depot scripts to a folder." />
+                        ToolTip.Tip="Writes the generated app and depot scripts to a folder of your choice, to run them by hand or keep them in version control." />
                 <Button Content="Export GitHub Actions workflow…"
                         Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ExportWorkflowCommand}"
-                        ToolTip.Tip="Produce a CI workflow that performs this same upload." />
+                        ToolTip.Tip="Writes a GitHub Actions workflow that performs this same upload from CI. The secrets it needs are listed at the top of the file." />
                 <TextBlock Text="{Binding LastBuildSummary}" Classes="hint" VerticalAlignment="Center" />
               </StackPanel>
 
@@ -174,12 +342,9 @@
         <TabItem Header="Depots">
           <DockPanel Margin="4,12,12,12">
 
-            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
-              <Button Content="Add depot"
-                      Command="{Binding SelectedProfile.AddDepotCommand}" />
-              <TextBlock Classes="hint" VerticalAlignment="Center"
-                         Text="Depot IDs come from the Steamworks admin panel and are usually allocated just above the App ID." />
-            </StackPanel>
+            <Button DockPanel.Dock="Top" Content="Add depot" Margin="0,0,0,12"
+                    Command="{Binding SelectedProfile.AddDepotCommand}"
+                    ToolTip.Tip="Adds a depot that ships the whole app/game build folder. Depot IDs come from the Steamworks admin panel; the next free number above the App ID is filled in as a guess." />
 
             <ScrollViewer>
               <ItemsControl ItemsSource="{Binding SelectedProfile.Depots}">
@@ -189,78 +354,107 @@
                               HorizontalAlignment="Stretch">
                       <StackPanel Margin="8">
 
-                        <Grid ColumnDefinitions="120,140,16,90,*,Auto" Margin="0,0,0,10">
-                          <TextBlock Grid.Column="0" Text="Depot ID" Classes="label" />
-                          <TextBox  Grid.Column="1" Text="{Binding DepotIdText, Mode=TwoWay}" />
-                          <TextBlock Grid.Column="3" Text="Label" Classes="label" />
+                        <Grid ColumnDefinitions="140,140,16,Auto,*,Auto" Margin="0,0,0,10">
+                          <StackPanel Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipDepotId}">
+                            <v:InfoIcon />
+                            <TextBlock Text="Depot ID" />
+                          </StackPanel>
+                          <TextBox  Grid.Column="1" Text="{Binding DepotIdText, Mode=TwoWay}"
+                                    ToolTip.Tip="{StaticResource TipDepotId}" />
+                          <StackPanel Grid.Column="3" Classes="labelled" ToolTip.Tip="{StaticResource TipDepotLabel}">
+                            <v:InfoIcon />
+                            <TextBlock Text="Label" />
+                          </StackPanel>
                           <TextBox  Grid.Column="4" Text="{Binding Label, Mode=TwoWay}"
-                                    Watermark="e.g. Windows content" />
-                          <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="8" Margin="12,0,0,0">
-                            <CheckBox Content="Enabled" IsChecked="{Binding Enabled, Mode=TwoWay}"
-                                      VerticalAlignment="Center" />
+                                    Watermark="e.g. Windows content"
+                                    ToolTip.Tip="{StaticResource TipDepotLabel}" />
+                          <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="12" Margin="12,0,0,0">
+                            <StackPanel Classes="labelled" Margin="0" ToolTip.Tip="{StaticResource TipDepotEnabled}">
+                              <v:InfoIcon />
+                              <CheckBox Content="Enabled" IsChecked="{Binding Enabled, Mode=TwoWay}" />
+                            </StackPanel>
                             <Button Content="Remove depot"
                                     Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SelectedProfile.RemoveDepotCommand}"
-                                    CommandParameter="{Binding}" />
+                                    CommandParameter="{Binding}"
+                                    ToolTip.Tip="Removes this depot from the project. The depot on Steam is not touched." />
                           </StackPanel>
                         </Grid>
 
-                        <Grid ColumnDefinitions="120,*" Margin="0,0,0,10">
-                          <TextBlock Grid.Column="0" Text="Content root" Classes="label" />
+                        <Grid ColumnDefinitions="140,*" Margin="0,0,0,10">
+                          <StackPanel Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipDepotContentRoot}">
+                            <v:InfoIcon />
+                            <TextBlock Text="Content root" />
+                          </StackPanel>
                           <TextBox Grid.Column="1" Text="{Binding ContentRootOverride, Mode=TwoWay}"
-                                   Watermark="Optional — overrides the project's content folder for this depot" />
+                                   Watermark="Optional — overrides the project's app/game build folder for this depot"
+                                   ToolTip.Tip="{StaticResource TipDepotContentRoot}" />
                         </Grid>
 
-                        <TextBlock Text="File mappings" Classes="h2" />
-                        <TextBlock Classes="hint" Margin="0,0,0,6"
-                                   Text="Local path is relative to the content root and may contain * or ?. Depot path is where the files land inside the installed game; use . for its root." />
+                        <StackPanel Classes="labelled" Margin="0,16,0,8" ToolTip.Tip="{StaticResource TipFileMappings}">
+                          <v:InfoIcon />
+                          <TextBlock Text="File mappings" Classes="h2" Margin="0" />
+                        </StackPanel>
 
                         <ItemsControl ItemsSource="{Binding Mappings}">
                           <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:FileMappingViewModel">
                               <Grid ColumnDefinitions="*,8,*,8,Auto,8,Auto" Margin="0,0,0,6">
                                 <TextBox Grid.Column="0" Text="{Binding LocalPath, Mode=TwoWay}"
-                                         Watermark="Local path (e.g. *)" />
+                                         Watermark="Local path (e.g. *)"
+                                         ToolTip.Tip="Relative to the depot's folder, and may contain * or ?. * alone means everything in it." />
                                 <TextBox Grid.Column="2" Text="{Binding DepotPath, Mode=TwoWay}"
-                                         Watermark="Depot path (e.g. .)" />
+                                         Watermark="Depot path (e.g. .)"
+                                         ToolTip.Tip="Where the files land inside the installed game. Use . for its root." />
                                 <CheckBox Grid.Column="4" Content="Recursive"
                                           IsChecked="{Binding Recursive, Mode=TwoWay}"
-                                          VerticalAlignment="Center" />
+                                          VerticalAlignment="Center"
+                                          ToolTip.Tip="Apply the local path's wildcard in subfolders too, not only at the first level." />
                                 <Button Grid.Column="6" Content="✕"
                                         Command="{Binding $parent[Expander].((vm:DepotViewModel)DataContext).RemoveMappingCommand}"
-                                        CommandParameter="{Binding}" />
+                                        CommandParameter="{Binding}"
+                                        ToolTip.Tip="Removes this mapping." />
                               </Grid>
                             </DataTemplate>
                           </ItemsControl.ItemTemplate>
                         </ItemsControl>
 
                         <Button Content="Add mapping" Command="{Binding AddMappingCommand}"
-                                HorizontalAlignment="Left" Margin="0,4,0,0" />
+                                HorizontalAlignment="Left" Margin="0,4,0,0"
+                                ToolTip.Tip="Adds a rule that picks files for this depot." />
 
-                        <TextBlock Text="Exclusions" Classes="h2" />
-                        <TextBlock Classes="hint" Margin="0,0,0,6"
-                                   Text="Patterns removed from this depot at any depth, e.g. *.pdb or bin/tools*." />
+                        <StackPanel Classes="labelled" Margin="0,16,0,8" ToolTip.Tip="{StaticResource TipExclusions}">
+                          <v:InfoIcon />
+                          <TextBlock Text="Exclusions" Classes="h2" Margin="0" />
+                        </StackPanel>
 
                         <ItemsControl ItemsSource="{Binding Exclusions}">
                           <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:TextItemViewModel">
                               <Grid ColumnDefinitions="*,8,Auto" Margin="0,0,0,6">
                                 <TextBox Grid.Column="0" Text="{Binding Value, Mode=TwoWay}"
-                                         Watermark="e.g. *.pdb" />
+                                         Watermark="e.g. *.pdb"
+                                         ToolTip.Tip="{StaticResource TipExclusions}" />
                                 <Button Grid.Column="2" Content="✕"
                                         Command="{Binding $parent[Expander].((vm:DepotViewModel)DataContext).RemoveExclusionCommand}"
-                                        CommandParameter="{Binding}" />
+                                        CommandParameter="{Binding}"
+                                        ToolTip.Tip="Removes this exclusion." />
                               </Grid>
                             </DataTemplate>
                           </ItemsControl.ItemTemplate>
                         </ItemsControl>
 
                         <Button Content="Add exclusion" Command="{Binding AddExclusionCommand}"
-                                HorizontalAlignment="Left" Margin="0,4,0,0" />
+                                HorizontalAlignment="Left" Margin="0,4,0,0"
+                                ToolTip.Tip="Adds a pattern of files to leave out of this depot." />
 
-                        <Grid ColumnDefinitions="120,*" Margin="0,16,0,0">
-                          <TextBlock Grid.Column="0" Text="Install script" Classes="label" />
+                        <Grid ColumnDefinitions="140,*" Margin="0,16,0,0">
+                          <StackPanel Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipInstallScript}">
+                            <v:InfoIcon />
+                            <TextBlock Text="Install script" />
+                          </StackPanel>
                           <TextBox Grid.Column="1" Text="{Binding InstallScript, Mode=TwoWay}"
-                                   Watermark="Optional — path to an install script VDF inside the content root" />
+                                   Watermark="Optional — path to an install script VDF inside the content root"
+                                   ToolTip.Tip="{StaticResource TipInstallScript}" />
                         </Grid>
 
                       </StackPanel>
@@ -281,13 +475,17 @@
 
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <Button Content="Preview contents" Command="{Binding PreflightCommand}"
-                        ToolTip.Tip="Resolve the file mappings against disk and show what would be uploaded." />
-                <Button Content="Upload build" Command="{Binding UploadCommand}" Classes="accent" />
-                <Button Content="Cancel" Command="{Binding CancelCommand}" />
-                <Button Content="Open build log" Command="{Binding OpenLogCommand}" />
+                        ToolTip.Tip="Resolves the file mappings against the disk and shows what would be uploaded, with warnings for mappings that match nothing and debug files about to ship. Uploads nothing." />
+                <Button Content="Upload build" Command="{Binding UploadCommand}" Classes="accent"
+                        ToolTip.Tip="Generates the build scripts and runs steamcmd to upload this build to Steam. Problems in the project are listed below, and the ones marked as errors block the upload." />
+                <Button Content="Cancel" Command="{Binding CancelCommand}"
+                        ToolTip.Tip="Stops steamcmd and whatever it is doing: an upload, a download or a password check." />
+                <Button Content="Open build log" Command="{Binding OpenLogCommand}"
+                        ToolTip.Tip="Opens the newest steamcmd log file in the upload logs/VDF folder. Available after an upload." />
                 <Button Content="Copy log" Command="{Binding CopyLogCommand}"
-                        ToolTip.Tip="Copy the whole panel below. Select lines and press Ctrl+C to copy only those." />
-                <Button Content="Clear log" Command="{Binding ClearLogCommand}" />
+                        ToolTip.Tip="Copies the whole panel below. Select lines and press Ctrl+C to copy only those." />
+                <Button Content="Clear log" Command="{Binding ClearLogCommand}"
+                        ToolTip.Tip="Empties the panel below. Log files on disk are kept." />
               </StackPanel>
 
               <ItemsControl ItemsSource="{Binding Issues}">
@@ -313,7 +511,8 @@
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:DepotPreflightViewModel">
                       <Expander Margin="0,4,0,0" HorizontalAlignment="Stretch"
-                                Header="{Binding Summary}">
+                                Header="{Binding Summary}"
+                                ToolTip.Tip="Open it for the warnings about this depot and its largest files.">
                         <StackPanel Margin="8" Spacing="4">
                           <ItemsControl ItemsSource="{Binding Notes}">
                             <ItemsControl.ItemTemplate>
@@ -394,11 +593,13 @@
 
             <StackPanel DockPanel.Dock="Top" Spacing="10">
               <StackPanel Orientation="Horizontal" Spacing="8">
-                <Button Content="Refresh from Steam" Command="{Binding RefreshCommand}" />
+                <Button Content="Refresh from Steam" Command="{Binding RefreshCommand}"
+                        ToolTip.Tip="Reads this app's build history and branches from Steam. Needs a publisher Web API key: this project's own from the Project tab, or else the one in Settings." />
                 <ComboBox ItemsSource="{Binding Branches}"
                           SelectedItem="{Binding SelectedBranch, Mode=TwoWay}"
                           MinWidth="200"
-                          PlaceholderText="Branch">
+                          PlaceholderText="Branch"
+                          ToolTip.Tip="The branch Set selected build live puts the selected build on.">
                   <ComboBox.ItemTemplate>
                     <DataTemplate x:DataType="steam:SteamBranch">
                       <TextBlock Text="{Binding Name}" />
@@ -406,26 +607,27 @@
                   </ComboBox.ItemTemplate>
                 </ComboBox>
                 <TextBox Text="{Binding SetLiveDescription, Mode=TwoWay}" MinWidth="220"
-                         Watermark="Optional note for the branch change" />
-                <Button Content="Set selected build live" Command="{Binding SetLiveCommand}" />
+                         Watermark="Optional note for the branch change"
+                         ToolTip.Tip="Optional. A note Steam records with this change of branch." />
+                <Button Content="Set selected build live" Command="{Binding SetLiveCommand}"
+                        ToolTip.Tip="Puts the build selected in the list live on the chosen branch. On the default branch, every player gets it. Select a build in the list first." />
               </StackPanel>
-              <!-- A Grid rather than a horizontal StackPanel: the hint only wraps when
-                   something bounds its width, and a StackPanel offers it infinity. -->
-              <Grid ColumnDefinitions="Auto,8,Auto,12,*">
-                <TextBlock Grid.Column="0" Text="Download builds for" VerticalAlignment="Center" />
-                <ComboBox Grid.Column="2" ItemsSource="{Binding Platforms}"
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <StackPanel Classes="labelled" Margin="0" ToolTip.Tip="{StaticResource TipDownloadFor}">
+                  <v:InfoIcon />
+                  <TextBlock Text="Download builds for" />
+                </StackPanel>
+                <ComboBox ItemsSource="{Binding Platforms}"
                           SelectedItem="{Binding SelectedPlatform, Mode=TwoWay}"
                           MinWidth="150"
-                          ToolTip.Tip="Which platform's depots steamcmd fetches. Leave it on this machine unless you want to look at another platform's build.">
+                          ToolTip.Tip="{StaticResource TipDownloadFor}">
                   <ComboBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:PlatformChoice">
                       <TextBlock Text="{Binding Label}" />
                     </DataTemplate>
                   </ComboBox.ItemTemplate>
                 </ComboBox>
-                <TextBlock Grid.Column="4" Classes="hint" VerticalAlignment="Center"
-                           Text="Download installs a build that is live on a branch into a folder you choose, with steamcmd — the same files a player gets. The log is on the Upload tab." />
-              </Grid>
+              </StackPanel>
               <TextBlock Text="{Binding Status}" Classes="hint" />
             </StackPanel>
 
@@ -445,7 +647,13 @@
                 <Grid DockPanel.Dock="Top" ColumnDefinitions="110,170,160,*,100" Margin="8,0,8,6">
                   <TextBlock Grid.Column="0" Text="Build" FontWeight="SemiBold" />
                   <TextBlock Grid.Column="1" Text="Created" FontWeight="SemiBold" />
-                  <TextBlock Grid.Column="2" Text="Live on" FontWeight="SemiBold" />
+                  <!-- The icon goes after the heading here, so the heading stays above
+                       the values of its column. -->
+                  <StackPanel Grid.Column="2" Classes="labelled" Margin="0"
+                              ToolTip.Tip="The branches this build is live on. Only a build that is live on a branch can be downloaded.">
+                    <TextBlock Text="Live on" FontWeight="SemiBold" />
+                    <v:InfoIcon />
+                  </StackPanel>
                   <TextBlock Grid.Column="3" Text="Description" FontWeight="SemiBold" />
                 </Grid>
 
@@ -463,14 +671,12 @@
                                    TextTrimming="CharacterEllipsis" />
                         <!-- One command on the tab, told which row by its parameter; the
                              button is enabled exactly when its own build is on a branch and
-                             steamcmd is idle. The tooltip shows on the disabled state too,
-                             because "why can't I download this one" is the question. -->
+                             steamcmd is idle, and its tooltip says why when it is not. -->
                         <Button Grid.Column="4" Content="Download" HorizontalAlignment="Right"
                                 Padding="10,4" MinHeight="0"
                                 Command="{Binding $parent[ListBox].((vm:BuildsViewModel)DataContext).DownloadCommand}"
                                 CommandParameter="{Binding}"
-                                ToolTip.Tip="{Binding DownloadHint}"
-                                ToolTip.ShowOnDisabled="True" />
+                                ToolTip.Tip="{Binding DownloadHint}" />
                       </Grid>
                     </DataTemplate>
                   </ListBox.ItemTemplate>
@@ -481,89 +687,117 @@
           </DockPanel>
         </TabItem>
 
-        <!-- ============================ Settings ============================ -->
-        <TabItem Header="Settings">
-          <ScrollViewer>
-            <StackPanel Margin="4,12,12,12" DataContext="{Binding Settings}" x:DataType="vm:SettingsViewModel">
+      </TabControl>
 
-              <Border Classes="card">
-                <StackPanel Spacing="6">
-                  <TextBlock Text="Steamworks SDK" Classes="h1" />
-                  <Grid ColumnDefinitions="*,8,Auto">
-                    <TextBox Grid.Column="0"
-                             Text="{Binding ContentBuilderPath, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
-                             Watermark="…/sdk/tools/ContentBuilder" />
-                    <Button Grid.Column="2" Content="Browse…"
-                            Command="{Binding BrowseContentBuilderCommand}" />
-                  </Grid>
-                  <TextBlock Text="{Binding SteamCmdStatus}" Classes="hint" />
+      <!-- ============================ Settings ============================ -->
+      <!-- The app's, not a project's: opened from the bottom of the sidebar in place of the
+           tabs, with the title where the tab headers stand. -->
+      <DockPanel Margin="12,8,12,0" IsVisible="{Binding IsSettingsOpen}">
+
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Height="48" Margin="12,0,24,0">
+          <TextBlock Grid.Column="0" Text="Settings" FontSize="24" VerticalAlignment="Center" />
+          <Button Grid.Column="1" Content="Close" Command="{Binding CloseSettingsCommand}"
+                  VerticalAlignment="Center"
+                  ToolTip.Tip="Back to the selected project. Clicking a project in the list does the same." />
+        </Grid>
+
+        <ScrollViewer>
+          <StackPanel Margin="16,15,24,12" DataContext="{Binding Settings}" x:DataType="vm:SettingsViewModel">
+
+            <Border Classes="card">
+              <StackPanel Spacing="6">
+                <!-- Card titles carry the icon after them, so they stay level with the
+                     titles of the cards that have nothing to explain. -->
+                <StackPanel Classes="labelled" Margin="0" ToolTip.Tip="{StaticResource TipSdk}">
+                  <TextBlock Text="Steamworks SDK" Classes="h1" Margin="0" />
+                  <v:InfoIcon />
                 </StackPanel>
-              </Border>
+                <Grid ColumnDefinitions="*,8,Auto">
+                  <TextBox Grid.Column="0"
+                           Text="{Binding ContentBuilderPath, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                           Watermark="…/sdk/tools/ContentBuilder"
+                           ToolTip.Tip="{StaticResource TipSdk}" />
+                  <Button Grid.Column="2" Content="Browse…"
+                          Command="{Binding BrowseContentBuilderCommand}"
+                          ToolTip.Tip="{StaticResource TipBrowse}" />
+                </Grid>
+                <TextBlock Text="{Binding SteamCmdStatus}" Classes="hint" />
+              </StackPanel>
+            </Border>
 
-              <Border Classes="card">
-                <StackPanel Spacing="6">
-                  <TextBlock Text="Publisher Web API key" Classes="h1" />
-                  <TextBlock Classes="hint"
-                             Text="Needed only for the Builds tab: reading build history and promoting a build to a branch. Create one in Steamworks under Users &amp; Permissions → Manage Groups." />
-                  <Grid ColumnDefinitions="*,8,Auto,8,Auto">
-                    <TextBox Grid.Column="0" Text="{Binding ApiKeyInput, Mode=TwoWay}"
-                             PasswordChar="•" Watermark="Paste the key to replace the stored one" />
-                    <Button Grid.Column="2" Content="Save" Command="{Binding SaveApiKeyCommand}" />
-                    <Button Grid.Column="4" Content="Remove" Command="{Binding ClearApiKeyCommand}" />
-                  </Grid>
-                  <TextBlock Classes="hint" Text="{Binding SecretStorageDescription}" />
-                  <TextBlock Classes="hint" Text="{Binding Status}" />
+            <Border Classes="card">
+              <StackPanel Spacing="6">
+                <StackPanel Classes="labelled" Margin="0" ToolTip.Tip="{Binding ApiKeyHelp}">
+                  <TextBlock Text="Publisher Web API key" Classes="h1" Margin="0" />
+                  <v:InfoIcon />
                 </StackPanel>
-              </Border>
-
-              <Border Classes="card">
-                <StackPanel Spacing="8">
-                  <TextBlock Text="Credentials" Classes="h1" />
-                  <TextBlock Classes="hint" TextWrapping="Wrap"
-                             Text="{Binding PasswordPolicyDescription}" />
+                <Grid ColumnDefinitions="*,8,Auto,8,Auto">
+                  <TextBox Grid.Column="0" Text="{Binding ApiKeyInput, Mode=TwoWay}"
+                           PasswordChar="•" Watermark="{Binding ApiKeyWatermark}"
+                           ToolTip.Tip="{Binding ApiKeyHelp}" />
+                  <Button Grid.Column="2" Content="Save" Command="{Binding SaveApiKeyCommand}"
+                          ToolTip.Tip="Saves the key pasted here in the encrypted store, for every project without a key of its own." />
+                  <Button Grid.Column="4" Content="Remove" Command="{Binding ClearApiKeyCommand}"
+                          ToolTip.Tip="Deletes the saved key. Projects without a key of their own cannot use the Builds tab until a new one is saved." />
+                </Grid>
+                <!-- Green when saved, red when not, as for the password; then what stopped
+                     the last Save. -->
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Classes="hint" Opacity="1" Text="{Binding ApiKeyState}"
+                             Classes.ok="{Binding HasApiKey}"
+                             Classes.error="{Binding !HasApiKey}" />
+                  <TextBlock Classes="hint warn" Opacity="1" Text="{Binding Status}"
+                             IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
-              </Border>
+              </StackPanel>
+            </Border>
 
-              <Border Classes="card">
-                <StackPanel Spacing="8">
-                  <TextBlock Text="Behaviour" Classes="h1" />
+            <Border Classes="card">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Behaviour" Classes="h1" />
+                <StackPanel Classes="labelled" Margin="0" ToolTip.Tip="Switches between the dark and the light look.">
+                  <v:InfoIcon />
                   <CheckBox Content="Dark theme" IsChecked="{Binding DarkTheme, Mode=TwoWay}" />
+                </StackPanel>
+                <StackPanel Classes="labelled" Margin="0" ToolTip.Tip="{StaticResource TipConfirmSetLive}">
+                  <v:InfoIcon />
                   <CheckBox Content="Confirm before setting a build live"
                             IsChecked="{Binding ConfirmSetLive, Mode=TwoWay}" />
-                  <TextBlock Classes="hint"
-                             Text="Publishing to the default branch always asks, whatever this is set to." />
                 </StackPanel>
-              </Border>
+              </StackPanel>
+            </Border>
 
-              <Border Classes="card" x:DataType="vm:UpdatesViewModel"
-                      DataContext="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Updates}">
-                <StackPanel Spacing="8">
-                  <TextBlock Text="Updates" Classes="h1" />
-                  <TextBlock Text="{Binding CurrentVersion}" />
-                  <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Button Content="Check for updates" Command="{Binding CheckCommand}" />
-                    <Button Content="{Binding InstallLabel}" Command="{Binding InstallCommand}"
-                            Classes="accent" IsVisible="{Binding IsUpdateAvailable}" />
-                    <Button Content="Releases page" Command="{Binding OpenReleasesCommand}"
-                            ToolTip.Tip="Release notes, and the installer and portable downloads for every version." />
-                  </StackPanel>
-                  <ProgressBar Minimum="0" Maximum="100" Height="6"
-                               Value="{Binding DownloadProgress, Mode=OneWay}"
-                               IsVisible="{Binding IsDownloading}" />
-                  <TextBlock Text="{Binding Status}" Classes="hint"
-                             IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <Border Classes="card" x:DataType="vm:UpdatesViewModel"
+                    DataContext="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Updates}">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Updates" Classes="h1" />
+                <TextBlock Text="{Binding CurrentVersion}" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Button Content="Check for updates" Command="{Binding CheckCommand}"
+                          ToolTip.Tip="Looks for a newer release now. Only a copy installed with the installer or the portable archive can update itself." />
+                  <Button Content="{Binding InstallLabel}" Command="{Binding InstallCommand}"
+                          Classes="accent" IsVisible="{Binding IsUpdateAvailable}"
+                          ToolTip.Tip="{StaticResource TipInstallUpdate}" />
+                  <Button Content="Releases page" Command="{Binding OpenReleasesCommand}"
+                          ToolTip.Tip="Opens the releases page: release notes, and the installer and portable downloads for every version." />
+                </StackPanel>
+                <ProgressBar Minimum="0" Maximum="100" Height="6"
+                             Value="{Binding DownloadProgress, Mode=OneWay}"
+                             IsVisible="{Binding IsDownloading}" />
+                <TextBlock Text="{Binding Status}" Classes="hint"
+                           IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <StackPanel Classes="labelled" Margin="0" ToolTip.Tip="{StaticResource TipCheckAtStartup}">
+                  <v:InfoIcon />
                   <CheckBox Content="Check for updates when the app starts"
                             IsChecked="{Binding CheckAtStartup, Mode=TwoWay}" />
-                  <TextBlock Classes="hint"
-                             Text="An update is only ever offered. It installs when you click the button, never during an upload, and your projects and saved passwords are kept." />
                 </StackPanel>
-              </Border>
+              </StackPanel>
+            </Border>
 
-            </StackPanel>
-          </ScrollViewer>
-        </TabItem>
+          </StackPanel>
+        </ScrollViewer>
 
-      </TabControl>
+      </DockPanel>
     </Panel>
 
     <!-- ============================ Status bar ============================ -->
@@ -576,13 +810,12 @@
                 Content="{Binding Updates.InstallLabel}"
                 Command="{Binding Updates.InstallCommand}"
                 IsVisible="{Binding Updates.IsUpdateAvailable}"
-                ToolTip.Tip="Downloads the new version, saves your projects and restarts. Unavailable while steamcmd is running." />
+                ToolTip.Tip="{StaticResource TipInstallUpdate}" />
         <TextBlock Grid.Column="2" Text="{Binding Upload.Status}" Classes="hint"
                    TextTrimming="CharacterEllipsis" MaxWidth="520" VerticalAlignment="Center" />
       </Grid>
     </Border>
 
   </Grid>
-
 
 </Window>

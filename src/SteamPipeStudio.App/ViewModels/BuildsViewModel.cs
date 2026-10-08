@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Threading.Tasks;
 using SteamPipeStudio.Core.Model;
 using SteamPipeStudio.Core.Security;
@@ -47,7 +48,8 @@ public sealed class BuildRowViewModel
     public bool CanDownload => LiveBranchNames.Count > 0;
 
     public string DownloadHint => CanDownload
-        ? "Download this build with steamcmd into a folder you choose — the same files a player gets."
+        ? "Download this build with steamcmd into a folder you choose — the same files a player " +
+          "gets, from the branch it is live on. The log is on the Upload tab."
         : "Not live on any branch, so there is nothing for steamcmd to install. Set it live on a " +
           "branch — a private one will do — and it becomes downloadable.";
 
@@ -99,7 +101,8 @@ public sealed class BuildsViewModel : ViewModelBase
     private readonly Func<string, string, Task<bool>> _confirm;
     private readonly DownloadServices _downloads;
 
-    private string _status = "Enter a publisher Web API key in Settings to see build history.";
+    private string _status = "Refresh from Steam loads the build history. It needs a publisher Web API key: " +
+                             "the one in Settings, or the project's own on the Project tab.";
     private BuildRowViewModel? _selectedBuild;
     private SteamBranch? _selectedBranch;
     private string _setLiveDescription = string.Empty;
@@ -222,12 +225,7 @@ public sealed class BuildsViewModel : ViewModelBase
             return;
         }
 
-        var key = _secrets.Read(SecretStoreFactory.PublisherApiKey);
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            Status = "No publisher Web API key stored. Add one in Settings.";
-            return;
-        }
+        if (ReadKey(profile) is not { } key) return;
 
         IsBusy = true;
         Status = "Loading build history…";
@@ -236,8 +234,8 @@ public sealed class BuildsViewModel : ViewModelBase
         {
             using var client = new PartnerApiClient();
 
-            var buildsTask = client.GetAppBuildsAsync(key, profile.AppId, _settings().BuildHistoryCount);
-            var branchesTask = client.GetAppBetasAsync(key, profile.AppId);
+            var buildsTask = client.GetAppBuildsAsync(key.Value, profile.AppId, _settings().BuildHistoryCount);
+            var branchesTask = client.GetAppBetasAsync(key.Value, profile.AppId);
             await Task.WhenAll(buildsTask, branchesTask).ConfigureAwait(true);
 
             Branches.Clear();
@@ -258,7 +256,7 @@ public sealed class BuildsViewModel : ViewModelBase
         }
         catch (PartnerApiException e)
         {
-            Status = e.Message;
+            Status = Explain(e, key);
         }
         finally
         {
@@ -280,12 +278,7 @@ public sealed class BuildsViewModel : ViewModelBase
             return;
         }
 
-        var key = _secrets.Read(SecretStoreFactory.PublisherApiKey);
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            Status = "No publisher Web API key stored.";
-            return;
-        }
+        if (ReadKey(profile) is not { } key) return;
 
         // Promoting to the default branch is the one irreversible-feeling action in the
         // app: it changes what every customer downloads. It always confirms, regardless
@@ -310,7 +303,7 @@ public sealed class BuildsViewModel : ViewModelBase
         try
         {
             using var client = new PartnerApiClient();
-            await client.SetAppBuildLiveAsync(key, profile.AppId, build.Build.BuildId, branch.Name,
+            await client.SetAppBuildLiveAsync(key.Value, profile.AppId, build.Build.BuildId, branch.Name,
                     string.IsNullOrWhiteSpace(SetLiveDescription) ? null : SetLiveDescription)
                 .ConfigureAwait(true);
 
@@ -323,7 +316,7 @@ public sealed class BuildsViewModel : ViewModelBase
         }
         catch (PartnerApiException e)
         {
-            Status = e.Message;
+            Status = Explain(e, key);
         }
         finally
         {
@@ -424,6 +417,29 @@ public sealed class BuildsViewModel : ViewModelBase
             IsDownloading = false;
             IsBusy = false;
         }
+    }
+
+    /// <summary>The project's own key, or the one in Settings; says so on screen when there is neither.</summary>
+    private PublisherKey? ReadKey(BuildProfile profile)
+    {
+        var key = SecretStoreFactory.ResolvePublisherKey(_secrets, profile.Id);
+        if (key is null)
+            Status = "No publisher Web API key: save one in Settings, or one for this project only on the Project tab.";
+        return key;
+    }
+
+    /// <summary>
+    /// A rejected key is the one failure where it matters which key was sent: the usual
+    /// cause is an app published by a different Steamworks partner than the key's.
+    /// </summary>
+    private static string Explain(PartnerApiException e, PublisherKey key)
+    {
+        if (e.Status is not (HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized)) return e.Message;
+
+        return key.IsProjectKey
+            ? $"{e.Message} The key used is this project's own, from the Project tab."
+            : $"{e.Message} The key used is the one in Settings. If another Steamworks partner " +
+              "publishes this app, save that partner's key for this project on the Project tab.";
     }
 
     private static bool HasFiles(string folder)

@@ -19,6 +19,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private string _apiKeyInput = string.Empty;
     private string _status = string.Empty;
     private string _steamCmdStatus = string.Empty;
+    private bool? _hasApiKey;
 
     public SettingsViewModel(AppSettings settings, ProfileStore store, ISecretStore secrets,
                              Func<string, Task<string?>> pickFolder)
@@ -35,7 +36,7 @@ public sealed class SettingsViewModel : ViewModelBase
         });
 
         SaveApiKeyCommand = new RelayCommand(SaveApiKey);
-        ClearApiKeyCommand = new RelayCommand(ClearApiKey);
+        ClearApiKeyCommand = new RelayCommand(ClearApiKey, () => HasApiKey);
 
         // Without these, a DPAPI or IO failure in Write/Delete leaves the user staring at
         // a Save button that did nothing and no message explaining why.
@@ -83,24 +84,40 @@ public sealed class SettingsViewModel : ViewModelBase
         set => SetProperty(ref _apiKeyInput, value);
     }
 
+    /// <summary>Raised when the key is saved or removed: projects without their own key use it.</summary>
+    public event Action? ApiKeyChanged;
+
+    /// <summary>Remembered: asking the secret store costs a DPAPI call or a process launch.</summary>
+    public bool HasApiKey => _hasApiKey ??=
+        !string.IsNullOrWhiteSpace(_secrets.Read(SecretStoreFactory.PublisherApiKey));
+
+    public string ApiKeyState => HasApiKey ? "Saved" : "Not saved";
+
+    public string ApiKeyWatermark => HasApiKey
+        ? "Paste a key here to replace the saved one"
+        : "Paste the key here to save it";
+
+    /// <summary>A problem with the last Save or Remove of the key.</summary>
     public string Status { get => _status; private set => SetProperty(ref _status, value); }
 
     public string SteamCmdStatus { get => _steamCmdStatus; private set => SetProperty(ref _steamCmdStatus, value); }
 
-    /// <summary>Explains where secrets live, in the platform's own terms.</summary>
-    public string SecretStorageDescription => OperatingSystem.IsWindows()
-        ? "Stored with Windows DPAPI, readable only by your Windows account on this machine."
-        : OperatingSystem.IsMacOS()
-            ? "Stored in your macOS login keychain."
-            : "Stored in your keyring when one is available; otherwise in an encrypted file " +
-              "readable only by your user account.";
-
-    public string PasswordPolicyDescription =>
-        "Your Steam password is optional. steamcmd is started as '+login <account>', so it " +
-        "reuses the session token it caches itself and asks only when that token has expired; " +
-        "leave the password empty on the Project tab to be asked then. Save it there and it goes " +
-        "into the same encrypted store as the API key above — never into the project file and " +
-        "never onto a command line — and is handed to steamcmd's input only when it asks.";
+    /// <summary>
+    /// The tooltip of the API key field: what the key is for, where to get one, and where it
+    /// is kept — in the platform's own terms, since that differs on every system.
+    /// </summary>
+    public string ApiKeyHelp =>
+        "Needed only for the Builds tab: reading build history, promoting a build to a branch " +
+        "and downloading builds. Create one in Steamworks under Users & Permissions → Manage " +
+        "Groups. It serves every project that has no key of its own: a key belongs to one " +
+        "Steamworks partner, so a project whose app another partner publishes gets its own " +
+        "on the Project tab. " +
+        (OperatingSystem.IsWindows()
+            ? "Stored with Windows DPAPI, readable only by your Windows account on this machine."
+            : OperatingSystem.IsMacOS()
+                ? "Stored in your macOS login keychain."
+                : "Stored in your keyring when one is available; otherwise in an encrypted file " +
+                  "readable only by your user account.");
 
     private void SaveApiKey()
     {
@@ -109,13 +126,24 @@ public sealed class SettingsViewModel : ViewModelBase
 
         _secrets.Write(SecretStoreFactory.PublisherApiKey, key);
         ApiKeyInput = string.Empty;
-        Status = "Publisher key saved.";
+        Status = string.Empty;
+        SetHasApiKey(true);
     }
 
     private void ClearApiKey()
     {
         _secrets.Delete(SecretStoreFactory.PublisherApiKey);
-        Status = "Publisher key removed.";
+        ApiKeyInput = string.Empty;
+        Status = string.Empty;
+        SetHasApiKey(false);
+    }
+
+    private void SetHasApiKey(bool saved)
+    {
+        _hasApiKey = saved;
+        RaiseAll(nameof(HasApiKey), nameof(ApiKeyState), nameof(ApiKeyWatermark));
+        ClearApiKeyCommand.RaiseCanExecuteChanged();
+        ApiKeyChanged?.Invoke();
     }
 
     /// <summary>Settings are saved the moment they change: there is no Save button to forget.</summary>

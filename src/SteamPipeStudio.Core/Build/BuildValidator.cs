@@ -74,7 +74,7 @@ public static class BuildValidator
 
         if (!Directory.EnumerateFileSystemEntries(profile.ContentRoot).Any())
             issues.Add(new ValidationIssue(IssueSeverity.Error, "ContentRoot",
-                "The content folder is empty. Uploading it would publish a build with no files."));
+                "The app/game build folder is empty. Uploading it would publish a build with no files."));
     }
 
     private static void ValidateBuildOutput(BuildProfile profile, List<ValidationIssue> issues)
@@ -82,7 +82,8 @@ public static class BuildValidator
         if (string.IsNullOrWhiteSpace(profile.BuildOutput))
         {
             issues.Add(new ValidationIssue(IssueSeverity.Error, "BuildOutput",
-                "Choose a folder for build logs and the chunk cache."));
+                "Choose an upload logs/VDF folder, for steamcmd's logs, the generated scripts " +
+                "and the chunk cache."));
             return;
         }
 
@@ -90,12 +91,12 @@ public static class BuildValidator
         // and every subsequent build uploads its own previous cache.
         if (IsInside(profile.BuildOutput, profile.ContentRoot))
             issues.Add(new ValidationIssue(IssueSeverity.Error, "BuildOutput",
-                "The build output folder is inside the content folder, so its logs and " +
-                "chunk cache would be uploaded as part of your game. Move it outside."));
+                "The upload logs/VDF folder is inside the app/game build folder, so its logs, scripts " +
+                "and chunk cache would be uploaded as part of your game. Move it outside."));
 
         if (IsInside(profile.ContentRoot, profile.BuildOutput))
             issues.Add(new ValidationIssue(IssueSeverity.Error, "ContentRoot",
-                "The content folder is inside the build output folder."));
+                "The app/game build folder is inside the upload logs/VDF folder."));
     }
 
     private static void ValidateDepots(BuildProfile profile, List<ValidationIssue> issues)

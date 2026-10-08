@@ -17,9 +17,33 @@ public interface ISecretStore
     void Delete(string name);
 }
 
+/// <summary>A publisher Web API key, and whether it is the project's own or the global one.</summary>
+public readonly record struct PublisherKey(string Value, bool IsProjectKey);
+
 public static class SecretStoreFactory
 {
     public const string PublisherApiKey = "publisher-web-api-key";
+
+    /// <summary>
+    /// Secret name for a project's own publisher Web API key. A key belongs to one
+    /// Steamworks partner, so a project whose app another partner publishes cannot use the
+    /// global one. Filed under the project rather than the App ID, so it goes when the
+    /// project is deleted.
+    /// </summary>
+    public static string ProjectApiKey(Guid projectId) => $"{PublisherApiKey}-{projectId:N}";
+
+    /// <summary>
+    /// The key a project's Web API calls use: its own when it has one, otherwise the global
+    /// one from Settings, and <c>null</c> when there is neither.
+    /// </summary>
+    public static PublisherKey? ResolvePublisherKey(ISecretStore secrets, Guid projectId)
+    {
+        var own = secrets.Read(ProjectApiKey(projectId));
+        if (!string.IsNullOrWhiteSpace(own)) return new PublisherKey(own.Trim(), IsProjectKey: true);
+
+        var global = secrets.Read(PublisherApiKey);
+        return string.IsNullOrWhiteSpace(global) ? null : new PublisherKey(global.Trim(), IsProjectKey: false);
+    }
 
     /// <summary>
     /// Secret name holding the Steam password for one account. Per account rather than

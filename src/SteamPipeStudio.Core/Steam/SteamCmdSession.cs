@@ -45,6 +45,57 @@ public sealed record DownloadOutcome(
     string? FailureDetail,
     string InstallDirectory);
 
+/// <summary>Whether signing in worked, and steamcmd's reason when it did not.</summary>
+public sealed record SignInOutcome(bool SignedIn, string? FailureDetail);
+
+public enum PasswordCheckVerdict
+{
+    /// <summary>Steam asked for the password and accepted it.</summary>
+    Correct,
+    /// <summary>Steam asked for the password and rejected it.</summary>
+    Wrong,
+    /// <summary>steamcmd signed in with the session it cached, so the password was never asked for.</summary>
+    NotAsked,
+    /// <summary>Steam asked for the password and there was none to give.</summary>
+    NoPassword,
+    /// <summary>Signing in failed for a reason that is not the password.</summary>
+    Failed
+}
+
+/// <summary>
+/// What signing in and straight out again found out about a password.
+///
+/// The honest answer is not always yes or no. steamcmd keeps the session of its last
+/// successful sign-in and does not ask for the password while that session is valid, so
+/// a sign-in that works may have proved nothing about the password at all. Only a
+/// sign-in that asked for it — and the prompt implementation is what knows that — says
+/// "correct".
+/// </summary>
+public sealed record PasswordCheck(PasswordCheckVerdict Verdict, string Message)
+{
+    public static PasswordCheck Classify(SignInOutcome outcome, int passwordAsks, bool passwordProvided)
+    {
+        if (passwordAsks > 0 && !passwordProvided)
+            return new(PasswordCheckVerdict.NoPassword,
+                "Steam asked for the password, and none is typed or saved.");
+
+        // A second ask is steamcmd's answer to a rejected password; it is aborted rather
+        // than answered again, so the reason may not have reached the output.
+        if (passwordAsks > 1 ||
+            outcome.FailureDetail?.Contains("Invalid Password", StringComparison.OrdinalIgnoreCase) == true)
+            return new(PasswordCheckVerdict.Wrong, "Wrong — Steam rejected the password.");
+
+        if (outcome.SignedIn && passwordAsks == 0)
+            return new(PasswordCheckVerdict.NotAsked,
+                "Not checked: you are still logged in to Steam from last time, so Steam did not ask for the password.");
+
+        if (outcome.SignedIn)
+            return new(PasswordCheckVerdict.Correct, "Correct — Steam accepted the password.");
+
+        return new(PasswordCheckVerdict.Failed, outcome.FailureDetail ?? "steamcmd could not sign in.");
+    }
+}
+
 /// <summary>
 /// The upload workflow: generate scripts, validate, log in, run the build.
 ///
@@ -200,7 +251,7 @@ public sealed class SteamCmdSession
         // The same mistake the validator refuses for the build output, with the same
         // consequence: the next upload would ship the downloaded build inside the game.
         if (BuildValidator.IsInside(request.InstallDirectory, profile.ContentRoot))
-            return "The download folder is inside the content folder, so the next upload would " +
+            return "The download folder is inside the app/game build folder, so the next upload would " +
                    "include the downloaded build in the game. Pick a folder outside it.";
 
         return null;
@@ -356,6 +407,37 @@ public sealed class SteamCmdSession
         }
     }
 
+    /// <summary>
+    /// Signs in and straight out again — <c>+login &lt;account&gt; +quit</c> — with the
+    /// same warm-up and the same prompts as an upload, to find out whether Steam accepts
+    /// the account. Whether the password was what got it in is for the prompt to say; see
+    /// <see cref="PasswordCheck"/>.
+    /// </summary>
+    public async Task<SignInOutcome> SignInAsync(BuildProfile profile, AppSettings settings,
+                                                 CancellationToken cancellation = default)
+    {
+        if (string.IsNullOrWhiteSpace(profile.SteamAccountName))
+            throw new InvalidOperationException("Enter the Steam account first.");
+
+        var steamCmd = LocateSteamCmd(profile, settings);
+        await WarmUpAsync(steamCmd, cancellation).ConfigureAwait(false);
+
+        var signedIn = false;
+        var runner = CreateRunner();
+        runner.Output += evt => signedIn |= evt.Kind == SteamCmdEventKind.LoginSucceeded;
+
+        var result = await runner
+            .RunAsync(steamCmd, new[] { "+login", profile.SteamAccountName, "+quit" }, cancellation)
+            .ConfigureAwait(false);
+
+        var succeeded = signedIn && result.ExitCode == 0 && result.FailureDetail is null;
+        return new SignInOutcome(succeeded, result.FailureDetail ?? (succeeded
+            ? null
+            : result.ExitCode == 0
+                ? "steamcmd quit without reporting a sign-in. Check the log on the Upload tab."
+                : DescribeExit(result.ExitCode)));
+    }
+
     private static string LocateSteamCmd(BuildProfile profile, AppSettings settings)
     {
         if (!SteamCmdLocator.TryLocate(profile.ContentBuilderPath(settings), out var steamCmd, out var error))
@@ -375,7 +457,7 @@ public sealed class SteamCmdSession
         0 => "steamcmd exited cleanly but never reported a finished build. " +
              "Check the build log — this usually means a depot failed to commit.",
         1 => "steamcmd exited with code 1. The most common causes are a rejected login " +
-             "and a content root that no longer exists.",
+             "and an app/game build folder that no longer exists.",
         5 => "steamcmd exited with code 5 (login failure): the account name, the password " +
              "or the Steam Guard code was rejected. If a password is saved for this account " +
              "on the Project tab, check that it is still the current one.",

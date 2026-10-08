@@ -299,9 +299,53 @@ public sealed class UploadViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Signs in to Steam and straight out again with <paramref name="password"/> as the
+    /// answer to the password prompt, for the Check button on the Project tab. It runs
+    /// through this panel like an upload — log, Cancel, Steam Guard dialog — because it is
+    /// a real sign-in, and steamcmd can only run once at a time.
+    /// </summary>
+    public async Task<PasswordCheck> CheckPasswordAsync(BuildProfile profile, string? password)
+    {
+        var credentials = new PasswordCheckPrompt(_prompt, password);
+
+        try
+        {
+            var outcome = await RunSteamCmdAsync(profile,
+                    $"Checking the password of {profile.SteamAccountName}…",
+                    $"signing in as {profile.SteamAccountName} to check the password",
+                    onProgress: null,
+                    (session, cancellation) => session.SignInAsync(profile, _settings(), cancellation),
+                    credentials)
+                .ConfigureAwait(true);
+
+            var check = PasswordCheck.Classify(outcome, credentials.PasswordAsks, credentials.HasPassword);
+            Status = check.Message;
+            Append(check.Message, check.Verdict switch
+            {
+                PasswordCheckVerdict.Correct => SteamCmdEventKind.LoginSucceeded,
+                PasswordCheckVerdict.Wrong or PasswordCheckVerdict.Failed => SteamCmdEventKind.LoginFailed,
+                // Neither right nor wrong: the warning colour the log uses for prompts.
+                _ => SteamCmdEventKind.SteamGuardPrompt
+            });
+            return check;
+        }
+        catch (OperationCanceledException)
+        {
+            Cancelled();
+            return new PasswordCheck(PasswordCheckVerdict.Failed, "Cancelled.");
+        }
+        catch (Exception e) when (e is InvalidOperationException or IOException
+                                    or System.ComponentModel.Win32Exception)
+        {
+            Fail(e.Message);
+            return new PasswordCheck(PasswordCheckVerdict.Failed, e.Message);
+        }
+    }
+
+    /// <summary>
     /// What every steamcmd run from this panel has in common: one run at a time, the
-    /// progress state reset, a banner in the log, the saved-password decorator, the log
-    /// wired to the session, and all of it put back however the run ends.
+    /// progress state reset, a banner in the log, the credentials prompt, the log wired to
+    /// the session, and all of it put back however the run ends.
     ///
     /// One run at a time is not a UI nicety. Upload and download share one builder
     /// folder and one console log, so <see cref="IsRunning"/> is the gate for both, and
@@ -309,7 +353,7 @@ public sealed class UploadViewModel : ViewModelBase
     /// </summary>
     private async Task<T> RunSteamCmdAsync<T>(
         BuildProfile profile, string status, string banner, Action<RunProgress>? onProgress,
-        Func<SteamCmdSession, CancellationToken, Task<T>> run)
+        Func<SteamCmdSession, CancellationToken, Task<T>> run, ISteamCmdPrompt? credentials = null)
     {
         if (IsRunning)
             throw new InvalidOperationException(
@@ -327,13 +371,17 @@ public sealed class UploadViewModel : ViewModelBase
         onProgress?.Invoke(new RunProgress(Phase, null));
         Append($"--- {DateTime.Now:HH:mm:ss} {banner} ---", SteamCmdEventKind.Bootstrap);
 
-        // The saved password, when there is one, is handed to steamcmd instead of opening
-        // the dialog. The decorator is built per run because it is scoped to one account
-        // and remembers whether the stored value has already been tried.
-        var credentials = new StoredPasswordPrompt(_prompt, _secrets, profile.SteamAccountName);
-        credentials.StoredPasswordRejected += () => Dispatcher.UIThread.Post(() =>
-            Append($"The saved password for {profile.SteamAccountName} was not accepted — asking.",
-                   SteamCmdEventKind.SteamGuardPrompt));
+        // By default the saved password, when there is one, is handed to steamcmd instead
+        // of opening the dialog. The decorator is built per run because it is scoped to one
+        // account and remembers whether the stored value has already been tried.
+        if (credentials is null)
+        {
+            var stored = new StoredPasswordPrompt(_prompt, _secrets, profile.SteamAccountName);
+            stored.StoredPasswordRejected += () => Dispatcher.UIThread.Post(() =>
+                Append($"The saved password for {profile.SteamAccountName} was not accepted — asking.",
+                       SteamCmdEventKind.SteamGuardPrompt));
+            credentials = stored;
+        }
 
         var session = new SteamCmdSession(credentials);
         session.Output += OnSteamCmdEvent;

@@ -33,7 +33,7 @@ public interface IAppUpdater
 }
 
 /// <summary>
-/// Drives the Updates card on the Settings tab and the notice in the status bar.
+/// Drives the Updates card in Settings and the notice in the status bar.
 ///
 /// The app only ever offers an update. Installing one restarts the process, which is
 /// never acceptable in the middle of an upload — steamcmd would be killed with a depot

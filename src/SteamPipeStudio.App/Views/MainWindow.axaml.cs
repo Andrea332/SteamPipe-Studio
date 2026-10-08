@@ -2,10 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using SteamPipeStudio.App.ViewModels;
 
 namespace SteamPipeStudio.App.Views;
@@ -78,6 +80,17 @@ public partial class MainWindow : Window
 
         CopyLogSelection();
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// A click on a project goes back to it from Settings. Picking a different project does
+    /// that through the selection; clicking the one already selected changes nothing there.
+    /// </summary>
+    private void OnProjectTapped(object? sender, TappedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel viewModel &&
+            (e.Source as Visual)?.FindAncestorOfType<ListBoxItem>(includeSelf: true) is not null)
+            viewModel.IsSettingsOpen = false;
     }
 
     private void OnCopyLogSelection(object? sender, RoutedEventArgs e) => CopyLogSelection();

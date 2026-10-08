@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using Avalonia.Threading;
 using SteamPipeStudio.Core.Model;
 using SteamPipeStudio.Core.Security;
+using SteamPipeStudio.Core.Steam;
 
 namespace SteamPipeStudio.App.ViewModels;
 
@@ -211,6 +212,10 @@ public sealed class ProfileViewModel : ViewModelBase
     private string _passwordStatus = string.Empty;
     private bool? _hasStoredPassword;
     private IDisposable? _pendingPasswordLookup;
+    private string _apiKeyInput = string.Empty;
+    private string _apiKeyStatus = string.Empty;
+    private bool? _hasOwnApiKey;
+    private bool? _hasGlobalApiKey;
 
     public ProfileViewModel(BuildProfile model, ISecretStore secrets)
     {
@@ -224,6 +229,11 @@ public sealed class ProfileViewModel : ViewModelBase
         ClearPasswordCommand = new RelayCommand(ClearPassword, () => HasStoredPassword);
         SavePasswordCommand.Faulted += e => PasswordStatus = e.Message;
         ClearPasswordCommand.Faulted += e => PasswordStatus = e.Message;
+
+        SaveApiKeyCommand = new RelayCommand(SaveApiKey);
+        ClearApiKeyCommand = new RelayCommand(ClearApiKey, () => HasOwnApiKey);
+        SaveApiKeyCommand.Faulted += e => ApiKeyStatus = e.Message;
+        ClearApiKeyCommand.Faulted += e => ApiKeyStatus = e.Message;
 
         AddDepotCommand = new RelayCommand(() =>
         {
@@ -292,6 +302,9 @@ public sealed class ProfileViewModel : ViewModelBase
         {
             if (!Set(_model.SteamAccountName, value, v => _model.SteamAccountName = v)) return;
 
+            // A check, or a complaint about the last Save, was about the previous account.
+            PasswordStatus = string.Empty;
+
             // The password is filed under the account name, so a different account needs
             // a fresh answer to "is one saved?" — otherwise the card claims a password is
             // stored for an account that has none. Asked once the typing stops rather than
@@ -321,30 +334,59 @@ public sealed class ProfileViewModel : ViewModelBase
         set => SetProperty(ref _passwordInput, value);
     }
 
+    /// <summary>
+    /// The note next to Saved / Not saved: a problem with the last Save or Remove, or the
+    /// outcome of Check. Setting it plainly makes it a warning.
+    /// </summary>
     public string PasswordStatus
     {
         get => _passwordStatus;
-        private set => SetProperty(ref _passwordStatus, value);
+        private set
+        {
+            _passwordStatusVerdict = null;
+            SetProperty(ref _passwordStatus, value);
+            RaiseAll(nameof(PasswordStatusIsGood), nameof(PasswordStatusIsBad), nameof(PasswordStatusIsWarning));
+        }
+    }
+
+    private PasswordCheckVerdict? _passwordStatusVerdict;
+
+    // Green for a password Steam accepted, red for one it rejected or a sign-in that
+    // failed, yellow for everything in between.
+    public bool PasswordStatusIsGood => _passwordStatusVerdict == PasswordCheckVerdict.Correct;
+    public bool PasswordStatusIsBad => _passwordStatusVerdict is PasswordCheckVerdict.Wrong or PasswordCheckVerdict.Failed;
+    public bool PasswordStatusIsWarning => !PasswordStatusIsGood && !PasswordStatusIsBad;
+
+    /// <summary>Shows a check in progress (<c>null</c>) or its outcome.</summary>
+    public void ShowPasswordCheck(PasswordCheck? check)
+    {
+        PasswordStatus = check?.Message ?? "Checking with Steam…";
+        _passwordStatusVerdict = check?.Verdict;
+        RaiseAll(nameof(PasswordStatusIsGood), nameof(PasswordStatusIsBad), nameof(PasswordStatusIsWarning));
     }
 
     /// <summary>
     /// Whether a password is saved for the account. Remembered rather than recomputed on
-    /// every read: two bindings and a command read it, and asking the secret store costs a
+    /// every read: a binding and a command read it, and asking the secret store costs a
     /// DPAPI call on Windows and a process launch on macOS and Linux.
     /// </summary>
     public bool HasStoredPassword => _hasStoredPassword ??=
         !string.IsNullOrWhiteSpace(_model.SteamAccountName) &&
         !string.IsNullOrEmpty(_secrets.Read(SecretStoreFactory.SteamPassword(_model.SteamAccountName)));
 
-    public string PasswordSummary => HasStoredPassword
-        ? "Saved. Uploads sign in without asking; Steam Guard still prompts when the session expires."
-        : "Not saved. steamcmd asks the first time and then reuses its own cached session.";
+    // The field never shows a saved password, so both of these say whether there is one:
+    // the placeholder of the empty field, and the coloured word under it.
+    public string PasswordWatermark => HasStoredPassword
+        ? "Type it here to change it"
+        : "Type it here to set it, or leave empty to be asked when needed";
+
+    public string PasswordState => HasStoredPassword ? "Saved" : "Not saved";
 
     /// <summary>Records the answer, or forgets it with <c>null</c> so the next read asks the store.</summary>
     private void SetStoredPassword(bool? known)
     {
         _hasStoredPassword = known;
-        RaiseAll(nameof(HasStoredPassword), nameof(PasswordSummary));
+        RaiseAll(nameof(HasStoredPassword), nameof(PasswordWatermark), nameof(PasswordState));
         ClearPasswordCommand.RaiseCanExecuteChanged();
     }
 
@@ -356,7 +398,7 @@ public sealed class ProfileViewModel : ViewModelBase
 
         _secrets.Write(SecretStoreFactory.SteamPassword(account), PasswordInput);
         PasswordInput = string.Empty;
-        PasswordStatus = $"Password saved for {account}.";
+        PasswordStatus = string.Empty;
         SetStoredPassword(true);
     }
 
@@ -367,8 +409,82 @@ public sealed class ProfileViewModel : ViewModelBase
 
         _secrets.Delete(SecretStoreFactory.SteamPassword(account));
         PasswordInput = string.Empty;
-        PasswordStatus = $"Password removed for {account}.";
+        PasswordStatus = string.Empty;
         SetStoredPassword(false);
+    }
+
+    // ------------------------------------------------------------------
+    // The project's own publisher Web API key
+    //
+    // Optional, and used instead of the global one in Settings: a key belongs to one
+    // Steamworks partner, so an app published by another partner needs its own. Kept in
+    // the secret store like the password, never in the project file.
+    // ------------------------------------------------------------------
+
+    public RelayCommand SaveApiKeyCommand { get; }
+    public RelayCommand ClearApiKeyCommand { get; }
+
+    /// <summary>What the user is pasting. Cleared the moment it reaches the store.</summary>
+    public string ApiKeyInput
+    {
+        get => _apiKeyInput;
+        set => SetProperty(ref _apiKeyInput, value);
+    }
+
+    /// <summary>A problem with the last Save or Remove of the key.</summary>
+    public string ApiKeyStatus
+    {
+        get => _apiKeyStatus;
+        private set => SetProperty(ref _apiKeyStatus, value);
+    }
+
+    /// <summary>Remembered for the same reason as <see cref="HasStoredPassword"/>.</summary>
+    public bool HasOwnApiKey => _hasOwnApiKey ??=
+        !string.IsNullOrWhiteSpace(_secrets.Read(SecretStoreFactory.ProjectApiKey(_model.Id)));
+
+    private bool HasGlobalApiKey => _hasGlobalApiKey ??=
+        !string.IsNullOrWhiteSpace(_secrets.Read(SecretStoreFactory.PublisherApiKey));
+
+    public string ApiKeyWatermark => HasOwnApiKey
+        ? "Paste a key here to replace this project's key"
+        : "Optional — paste a key for this project only";
+
+    // Green when the project has its own key, plain when it borrows the one in Settings,
+    // red when the Builds tab has no key at all to work with.
+    public string ApiKeyState => HasOwnApiKey ? "Saved for this project"
+        : HasGlobalApiKey ? "Not saved: uses the key in Settings"
+        : "Not saved, and none in Settings either: the Builds tab needs one";
+
+    public bool ApiKeyStateIsGood => HasOwnApiKey;
+    public bool ApiKeyStateIsBad => !HasOwnApiKey && !HasGlobalApiKey;
+
+    /// <summary>Forgets what is known about both keys, after the one in Settings changed.</summary>
+    public void RefreshApiKeyState()
+    {
+        _hasOwnApiKey = null;
+        _hasGlobalApiKey = null;
+        RaiseAll(nameof(HasOwnApiKey), nameof(ApiKeyWatermark), nameof(ApiKeyState),
+                 nameof(ApiKeyStateIsGood), nameof(ApiKeyStateIsBad));
+        ClearApiKeyCommand.RaiseCanExecuteChanged();
+    }
+
+    private void SaveApiKey()
+    {
+        var key = ApiKeyInput.Trim();
+        if (key.Length == 0) { ApiKeyStatus = "Paste the key to save it."; return; }
+
+        _secrets.Write(SecretStoreFactory.ProjectApiKey(_model.Id), key);
+        ApiKeyInput = string.Empty;
+        ApiKeyStatus = string.Empty;
+        RefreshApiKeyState();
+    }
+
+    private void ClearApiKey()
+    {
+        _secrets.Delete(SecretStoreFactory.ProjectApiKey(_model.Id));
+        ApiKeyInput = string.Empty;
+        ApiKeyStatus = string.Empty;
+        RefreshApiKeyState();
     }
 
     public string SetLiveBranch

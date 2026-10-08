@@ -11,7 +11,7 @@ Steam.
 
 Not affiliated with or endorsed by Valve.
 
-![SteamPipe Studio — the Project tab of a placeholder project: name and App ID, content and build-output folders, the Steam account with its optional saved password, and the branch to set live after an upload](docs/showcase.png)
+![SteamPipe Studio — the Project tab of a placeholder project: name and App ID, the app/game build and upload logs/VDF folders, the Steam account with its optional saved password, and the branch to set live after an upload](docs/showcase.png)
 
 ## What it does
 
@@ -20,8 +20,8 @@ Not affiliated with or endorsed by Valve.
   files, plus warnings for the two mistakes that cost the most time: a mapping that
   matched nothing, and debug symbols about to ship to customers.
 - **Refuses the errors that waste an hour.** Validation runs before `steamcmd` starts:
-  build output nested inside the content root (so the chunk cache uploads itself into
-  your game), duplicate depot IDs, an empty content folder, an absolute depot path,
+  the upload logs/VDF folder nested inside the app/game build folder (so the chunk cache uploads
+  itself into your game), duplicate depot IDs, an empty app/game build folder, an absolute depot path,
   `SetLive` pointing at the default branch — which Steam rejects silently, fifteen
   minutes in.
 - **Keeps your password out of the process list and the project file.** `steamcmd` is
@@ -43,7 +43,11 @@ Not affiliated with or endorsed by Valve.
 - **Tells you what is live, and hands it back to you.** The Builds tab reads build
   history and branches through the Steamworks partner Web API and can promote a build to
   a branch, which is the reason you would otherwise keep the Steamworks site open in a
-  tab. Every build that is live on a branch also gets a *Download* button: `steamcmd`
+  tab. It needs a publisher Web API key, saved once in *Settings* for every project; a
+  key only works for the apps of its own Steamworks partner, so a project whose game
+  another partner publishes can have a key of its own on the Project tab. Both go to the
+  same secret store as the password. Every build that is live on a branch also gets a
+  *Download* button: `steamcmd`
   installs it into a folder of your choice — the same files, in the same layout, that a
   player gets, for this machine's platform or any other — so a tester gets last night's
   build without a Steam client and without being handed the account. A build on no
@@ -114,9 +118,10 @@ around 50 MB because it includes the .NET runtime.
   developer: Control-click the package or the app and choose *Open*, or allow it under
   *System Settings → Privacy & Security*.
 
-Whether you downloaded a release or built it yourself, the first thing to do is open
-**Settings** and point *Steamworks SDK* at your `sdk/tools/ContentBuilder` folder. When
-the path is right, the line underneath reports where it found `steamcmd`.
+Whether you downloaded a release or built it yourself, the first thing to do is click
+**Settings** at the bottom of the project list and point *Steamworks SDK* at your
+`sdk/tools/ContentBuilder` folder. When the path is right, the line underneath reports
+where it found `steamcmd`.
 
 ## Building from source
 

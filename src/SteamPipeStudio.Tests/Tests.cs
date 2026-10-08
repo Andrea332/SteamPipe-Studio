@@ -50,6 +50,15 @@ internal static class Harness
     }
 }
 
+internal sealed class MemorySecretStore : ISecretStore
+{
+    private readonly Dictionary<string, string> _secrets = new();
+
+    public string? Read(string name) => _secrets.GetValueOrDefault(name);
+    public void Write(string name, string value) => _secrets[name] = value;
+    public void Delete(string name) => _secrets.Remove(name);
+}
+
 internal static class Program
 {
     private static string Fixture(string name) =>
@@ -78,6 +87,7 @@ internal static class Program
         ConsoleLogDeduplication();
         Secrets();
         PortableStore();
+        PasswordChecks();
         return Harness.Report();
     }
 
@@ -847,6 +857,34 @@ internal static class Program
         Harness.Equal("third is a new line", false, repeated.ShouldSuppressPipeLine("."));
     }
 
+    private static void PasswordChecks()
+    {
+        Console.WriteLine("== password check ==");
+
+        var signedIn = new SignInOutcome(true, null);
+        var rejected = new SignInOutcome(false, "Invalid Password");
+
+        Harness.Equal("asked once and signed in: correct", PasswordCheckVerdict.Correct,
+            PasswordCheck.Classify(signedIn, passwordAsks: 1, passwordProvided: true).Verdict);
+
+        // The case that must never read as "correct": a cached session signs in without
+        // the password, so a wrong one would sail through.
+        Harness.Equal("signed in without being asked: not checked", PasswordCheckVerdict.NotAsked,
+            PasswordCheck.Classify(signedIn, passwordAsks: 0, passwordProvided: true).Verdict);
+
+        Harness.Equal("rejected by Steam: wrong", PasswordCheckVerdict.Wrong,
+            PasswordCheck.Classify(rejected, passwordAsks: 1, passwordProvided: true).Verdict);
+        Harness.Equal("asked again, aborted before the reason printed: wrong", PasswordCheckVerdict.Wrong,
+            PasswordCheck.Classify(new SignInOutcome(false, null), passwordAsks: 2, passwordProvided: true).Verdict);
+        Harness.Equal("asked with nothing to give", PasswordCheckVerdict.NoPassword,
+            PasswordCheck.Classify(rejected, passwordAsks: 1, passwordProvided: false).Verdict);
+
+        var limited = PasswordCheck.Classify(new SignInOutcome(false, "Rate Limit Exceeded"),
+                                             passwordAsks: 1, passwordProvided: true);
+        Harness.Equal("other failures keep steamcmd's reason", PasswordCheckVerdict.Failed, limited.Verdict);
+        Harness.Equal("the reason is the message", "Rate Limit Exceeded", limited.Message);
+    }
+
     private static void PortableStore()
     {
         Console.WriteLine("== portable store ==");
@@ -913,6 +951,34 @@ internal static class Program
             hostile);
         Harness.Check("every name stays inside the namespace",
             hostile.StartsWith("steam-password-", StringComparison.Ordinal), hostile);
+
+        var project = Guid.NewGuid();
+        var projectKeyName = SecretStoreFactory.ProjectApiKey(project);
+        Harness.Check("a project's key has a name of its own",
+            projectKeyName != SecretStoreFactory.PublisherApiKey &&
+            projectKeyName != SecretStoreFactory.ProjectApiKey(Guid.NewGuid()), projectKeyName);
+        Harness.Check("a project's key name is safe as a file name",
+            projectKeyName.All(c => char.IsAsciiLetterOrDigit(c) || c == '-'), projectKeyName);
+
+        var keys = new MemorySecretStore();
+        Harness.Equal("no key anywhere", null, SecretStoreFactory.ResolvePublisherKey(keys, project));
+
+        keys.Write(SecretStoreFactory.PublisherApiKey, "GLOBAL");
+        Harness.Equal("without its own key a project uses the global one",
+            new PublisherKey("GLOBAL", IsProjectKey: false), SecretStoreFactory.ResolvePublisherKey(keys, project));
+
+        keys.Write(projectKeyName, " OWN ");
+        Harness.Equal("a project's own key wins over the global one",
+            new PublisherKey("OWN", IsProjectKey: true), SecretStoreFactory.ResolvePublisherKey(keys, project));
+        Harness.Equal("another project still uses the global one",
+            new PublisherKey("GLOBAL", IsProjectKey: false), SecretStoreFactory.ResolvePublisherKey(keys, Guid.NewGuid()));
+
+        keys.Delete(SecretStoreFactory.PublisherApiKey);
+        Harness.Equal("a project's own key works without a global one",
+            new PublisherKey("OWN", IsProjectKey: true), SecretStoreFactory.ResolvePublisherKey(keys, project));
+
+        keys.Write(projectKeyName, "   ");
+        Harness.Equal("a blank key counts as none", null, SecretStoreFactory.ResolvePublisherKey(keys, project));
 
         var root = Path.Combine(Path.GetTempPath(), "sps-secrets-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);

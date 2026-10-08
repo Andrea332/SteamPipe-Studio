@@ -1,5 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -20,6 +21,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly ISecretStore _secrets;
 
     private ProfileViewModel? _selectedProfile;
+    private bool _isSettingsOpen;
     private string _status = "Ready.";
 
     public MainWindowViewModel(ProfileStore store, AppSettings settings, Window owner, IAppUpdater updater)
@@ -31,6 +33,11 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         Profiles = new ObservableCollection<ProfileViewModel>(
             store.LoadProfiles().Select(p => new ProfileViewModel(p, _secrets)));
+        Profiles.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(EmptyTitle));
+            OnPropertyChanged(nameof(EmptyHint));
+        };
 
         Upload = new UploadViewModel(() => SelectedProfile, () => _settings, _prompt, OnUploadSucceeded,
                                      _prompt.CopyToClipboardAsync, _secrets);
@@ -43,17 +50,14 @@ public sealed class MainWindowViewModel : ViewModelBase
                 Persist: PersistModel));
         Settings = new SettingsViewModel(_settings, store, _secrets,
             title => _prompt.PickFolderAsync(title, _settings.ContentBuilderPath));
-        Updates = new UpdatesViewModel(updater, _settings, store, () => Upload.IsRunning, PersistAll);
 
-        // The Download buttons on the Builds tab and the update's Install button are
-        // disabled while steamcmd is busy on the Upload tab, and nothing else tells them
-        // when that changes.
-        Upload.PropertyChanged += (_, e) =>
+        // Every project without a key of its own falls back on the one in Settings, so its
+        // Saved / Not saved line changes with it.
+        Settings.ApiKeyChanged += () =>
         {
-            if (e.PropertyName != nameof(UploadViewModel.IsRunning)) return;
-            Builds.RefreshCommandStates();
-            Updates.RefreshCommandStates();
+            foreach (var profile in Profiles) profile.RefreshApiKeyState();
         };
+        Updates = new UpdatesViewModel(updater, _settings, store, () => Upload.IsRunning, PersistAll);
 
         NewProfileCommand = new RelayCommand(NewProfile);
         DuplicateProfileCommand = new RelayCommand(DuplicateProfile, () => SelectedProfile is not null);
@@ -62,6 +66,12 @@ public sealed class MainWindowViewModel : ViewModelBase
         ImportScriptCommand = new AsyncRelayCommand(ImportScriptAsync);
         ExportScriptsCommand = new AsyncRelayCommand(ExportScriptsAsync, () => SelectedProfile is not null);
         ExportWorkflowCommand = new AsyncRelayCommand(ExportWorkflowAsync, () => SelectedProfile is not null);
+        // Only for a password typed in the field: the saved one is what every upload uses
+        // anyway, and checking it would mostly end in "not checked" while Steam remembers
+        // the last login.
+        CheckPasswordCommand = new AsyncRelayCommand(CheckPasswordAsync,
+            () => SelectedProfile is { PasswordInput.Length: > 0 } && !Upload.IsRunning);
+        CloseSettingsCommand = new RelayCommand(() => IsSettingsOpen = false);
 
         BrowseContentRootCommand = new AsyncRelayCommand(async () =>
         {
@@ -72,7 +82,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         BrowseBuildOutputCommand = new AsyncRelayCommand(async () =>
         {
-            var picked = await _prompt.PickFolderAsync("Select a folder for logs and the build cache",
+            var picked = await _prompt.PickFolderAsync("Select a folder for upload logs, .vdf scripts and the chunk cache",
                                                        SelectedProfile?.BuildOutput);
             if (picked is not null && SelectedProfile is not null) SelectedProfile.BuildOutput = picked;
         });
@@ -80,7 +90,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         foreach (var command in new[]
                  {
                      DeleteProfileCommand, ImportScriptCommand, ExportScriptsCommand,
-                     ExportWorkflowCommand, BrowseContentRootCommand, BrowseBuildOutputCommand
+                     ExportWorkflowCommand, BrowseContentRootCommand, BrowseBuildOutputCommand,
+                     CheckPasswordCommand
                  })
             command.Faulted += e => Status = e.Message;
 
@@ -89,6 +100,17 @@ public sealed class MainWindowViewModel : ViewModelBase
                      NewProfileCommand, DuplicateProfileCommand, SaveProfileCommand
                  })
             command.Faulted += e => Status = e.Message;
+
+        // The Download buttons on the Builds tab, the update's Install button and the
+        // password Check button are disabled while steamcmd is busy on the Upload tab, and
+        // nothing else tells them when that changes.
+        Upload.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName != nameof(UploadViewModel.IsRunning)) return;
+            Builds.RefreshCommandStates();
+            Updates.RefreshCommandStates();
+            CheckPasswordCommand.RaiseCanExecuteChanged();
+        };
 
         SelectedProfile = Profiles.FirstOrDefault();
     }
@@ -109,10 +131,38 @@ public sealed class MainWindowViewModel : ViewModelBase
     public AsyncRelayCommand ExportWorkflowCommand { get; }
     public AsyncRelayCommand BrowseContentRootCommand { get; }
     public AsyncRelayCommand BrowseBuildOutputCommand { get; }
+    public AsyncRelayCommand CheckPasswordCommand { get; }
+    public RelayCommand CloseSettingsCommand { get; }
 
     public string Status { get => _status; private set => SetProperty(ref _status, value); }
 
     public bool HasProfile => SelectedProfile is not null;
+
+    /// <summary>
+    /// Settings are the app's, not a project's, so they open from the sidebar in place of
+    /// the project tabs — also when there is no project — and close when a project is
+    /// picked.
+    /// </summary>
+    public bool IsSettingsOpen
+    {
+        get => _isSettingsOpen;
+        set
+        {
+            if (SetProperty(ref _isSettingsOpen, value))
+                RaiseAll(nameof(ShowProjectTabs), nameof(ShowEmptyState));
+        }
+    }
+
+    public bool ShowProjectTabs => HasProfile && !IsSettingsOpen;
+    public bool ShowEmptyState => !HasProfile && !IsSettingsOpen;
+
+    // What the content area says instead of the tabs: either there is no project at all,
+    // or the one in the list was deselected.
+    public string EmptyTitle => Profiles.Count == 0 ? "No projects yet" : "No project selected";
+
+    public string EmptyHint => Profiles.Count == 0
+        ? "Create one with New project, top left — or turn a SteamPipe build script you already have into a project with Import app_build.vdf…"
+        : "Select a project in the list on the left, or create a new one with New project.";
 
     public ProfileViewModel? SelectedProfile
     {
@@ -123,15 +173,29 @@ public sealed class MainWindowViewModel : ViewModelBase
             // switching projects should never be a way to lose edits.
             if (_selectedProfile is { IsDirty: true }) Persist(_selectedProfile);
 
+            var previous = _selectedProfile;
             if (!SetProperty(ref _selectedProfile, value)) return;
 
+            if (previous is not null) previous.PropertyChanged -= OnSelectedProfileChanged;
+            if (value is not null) value.PropertyChanged += OnSelectedProfileChanged;
+
             OnPropertyChanged(nameof(HasProfile));
+            RaiseAll(nameof(ShowProjectTabs), nameof(ShowEmptyState));
+            if (value is not null) IsSettingsOpen = false;
             DuplicateProfileCommand.RaiseCanExecuteChanged();
             DeleteProfileCommand.RaiseCanExecuteChanged();
             SaveProfileCommand.RaiseCanExecuteChanged();
             ExportScriptsCommand.RaiseCanExecuteChanged();
             ExportWorkflowCommand.RaiseCanExecuteChanged();
+            CheckPasswordCommand.RaiseCanExecuteChanged();
         }
+    }
+
+    // Typing in the password field, or the field being cleared by Save, turns Check on and off.
+    private void OnSelectedProfileChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ProfileViewModel.PasswordInput))
+            CheckPasswordCommand.RaiseCanExecuteChanged();
     }
 
     // ------------------------------------------------------------------
@@ -162,6 +226,12 @@ public sealed class MainWindowViewModel : ViewModelBase
         copy.LastBuildId = null;
         copy.LastUploadedUtc = null;
 
+        // The copy usually uploads to an app of the same Steamworks partner, so it keeps
+        // the original's own Web API key; the password is filed by account and needs nothing.
+        var originalKey = _secrets.Read(SecretStoreFactory.ProjectApiKey(SelectedProfile.Model.Id));
+        if (!string.IsNullOrWhiteSpace(originalKey))
+            _secrets.Write(SecretStoreFactory.ProjectApiKey(copy.Id), originalKey);
+
         var viewModel = new ProfileViewModel(copy, _secrets);
         Profiles.Add(viewModel);
         SelectedProfile = viewModel;
@@ -176,8 +246,9 @@ public sealed class MainWindowViewModel : ViewModelBase
         var name = SelectedProfile.Name;
         var confirmed = await _prompt.ConfirmAsync(
             $"Delete '{name}'?",
-            "The project's settings are removed from this machine. Nothing on Steam changes " +
-            "and no files in your content folder are touched.");
+            "The project's settings, and its own Web API key if it has one, are removed from " +
+            "this machine. Nothing on Steam changes " +
+            "and no files in your app/game build folder are touched.");
 
         if (!confirmed) return;
 
@@ -186,6 +257,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         // would rewrite the JSON file we are about to delete and resurrect the project.
         SelectedProfile.MarkSaved();
 
+        // The key first: if the keychain refuses, nothing is gone yet and the error says why.
+        _secrets.Delete(SecretStoreFactory.ProjectApiKey(SelectedProfile.Model.Id));
         _store.DeleteProfile(SelectedProfile.Model);
         var index = Profiles.IndexOf(SelectedProfile);
         Profiles.Remove(SelectedProfile);
@@ -198,6 +271,21 @@ public sealed class MainWindowViewModel : ViewModelBase
         if (SelectedProfile is null) return;
         Persist(SelectedProfile);
         Status = $"Saved '{SelectedProfile.Name}'.";
+    }
+
+    /// <summary>
+    /// Checks the password typed in the Password field by signing in to Steam with it, so a
+    /// new password can be tried before it is saved. The verdict shows next to Saved / Not
+    /// saved; the sign-in is logged on the Upload tab.
+    /// </summary>
+    private async Task CheckPasswordAsync()
+    {
+        var profileVm = SelectedProfile;
+        if (profileVm is not { PasswordInput.Length: > 0 }) return;
+
+        var profile = profileVm.Flush();
+        profileVm.ShowPasswordCheck(null);
+        profileVm.ShowPasswordCheck(await Upload.CheckPasswordAsync(profile, profileVm.PasswordInput));
     }
 
     private async Task ImportScriptAsync()
