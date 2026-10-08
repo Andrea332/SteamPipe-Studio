@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -155,49 +156,279 @@ internal sealed class WindowsDpapiSecretStore : ISecretStore
     }
 }
 
-/// <summary>macOS: the login keychain, via the <c>security</c> command line tool.</summary>
+/// <summary>
+/// macOS: the login keychain, through the Security framework called in-process.
+///
+/// Not the <c>security</c> command line tool, which this used to run: it takes the secret
+/// as an argument (<c>-w &lt;secret&gt;</c>), where <c>ps</c> shows it to every other
+/// program on the machine for as long as the tool runs — the one exposure the rest of the
+/// app is built to avoid. P/Invoke keeps the secret inside this process and the Core
+/// library free of packages.
+///
+/// The item is the one the old code wrote — a generic password with service
+/// <c>SteamPipeStudio</c>, the secret name as account and the value as UTF-8 — so
+/// secrets saved before the change are still found. Their access list trusts
+/// <c>/usr/bin/security</c> rather than this app, so macOS asks before letting the app
+/// read or replace one; "Always Allow" settles it. The list identifies an app by its code
+/// signature, which is also why an unsigned or ad-hoc signed build can be asked again
+/// after an update.
+///
+/// <c>kSecUseDataProtectionKeychain</c> stays unset on purpose: that keychain needs a
+/// signed app with a keychain access group entitlement, and it cannot see the items
+/// already in the login keychain.
+/// </summary>
 [SupportedOSPlatform("macos")]
 internal sealed class MacKeychainSecretStore : ISecretStore
 {
     private const string Service = "SteamPipeStudio";
 
+    private const int ErrSecSuccess = 0;
+    private const int ErrSecDuplicateItem = -25299;
+    private const int ErrSecItemNotFound = -25300;
+
     public string? Read(string name)
     {
-        var (exitCode, stdout) = Run("find-generic-password", "-s", Service, "-a", name, "-w");
-        return exitCode == 0 ? stdout.TrimEnd('\n') : null;
+        try
+        {
+            using var cf = new CFScope();
+            var k = Keys.Load();
+            var query = Query(cf, name, (k.ReturnData, k.True), (k.MatchLimit, k.MatchLimitOne));
+
+            // Any failure — no item, a locked keychain, a denied prompt — means the same
+            // thing to the caller: there is no secret it can use.
+            if (SecItemCopyMatching(query, out var data) != ErrSecSuccess || data == IntPtr.Zero)
+                return null;
+
+            try
+            {
+                var length = checked((int)CFDataGetLength(data));
+                if (length == 0) return string.Empty;
+
+                var bytes = new byte[length];
+                Marshal.Copy(CFDataGetBytePtr(data), bytes, 0, length);
+                return Encoding.UTF8.GetString(bytes);
+            }
+            finally
+            {
+                CFRelease(data);
+            }
+        }
+        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException)
+        {
+            // The Project tab asks whether a password is saved while the window is being
+            // built; a broken framework load must cost the stored secret, not the app.
+            return null;
+        }
     }
 
-    public void Write(string name, string value) =>
-        Run("add-generic-password", "-U", "-s", Service, "-a", name, "-w", value);
-
-    public void Delete(string name) =>
-        Run("delete-generic-password", "-s", Service, "-a", name);
-
-    private static (int ExitCode, string Output) Run(params string[] arguments)
+    public void Write(string name, string value)
     {
-        var startInfo = new ProcessStartInfo("/usr/bin/security")
+        using var cf = new CFScope();
+        var k = Keys.Load();
+        var data = cf.Data(Encoding.UTF8.GetBytes(value));
+
+        // The service name is the label the security tool gave its items by default, so
+        // old and new entries look the same in Keychain Access.
+        var status = SecItemAdd(
+            Query(cf, name, (k.Label, cf.String(Service)), (k.ValueData, data)), IntPtr.Zero);
+
+        if (status == ErrSecDuplicateItem)
+            status = SecItemUpdate(Query(cf, name), cf.Dictionary((k.ValueData, data)));
+
+        if (status != ErrSecSuccess)
+            throw Failure("Could not save to the macOS keychain", status);
+    }
+
+    public void Delete(string name)
+    {
+        using var cf = new CFScope();
+        var status = SecItemDelete(Query(cf, name));
+
+        if (status is not (ErrSecSuccess or ErrSecItemNotFound))
+            throw Failure("Could not remove it from the macOS keychain", status);
+    }
+
+    private static IntPtr Query(CFScope cf, string name, params (IntPtr Key, IntPtr Value)[] extra)
+    {
+        var k = Keys.Load();
+        var identity = new[]
         {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
+            (k.Class, k.GenericPassword),
+            (k.Service, cf.String(Service)),
+            (k.Account, cf.String(name))
         };
-        foreach (var argument in arguments) startInfo.ArgumentList.Add(argument);
+        return cf.Dictionary(identity.Concat(extra).ToArray());
+    }
+
+    private static CryptographicException Failure(string what, int status)
+    {
+        var reason = Describe(status);
+        return new CryptographicException(reason is null
+            ? $"{what} (error {status})."
+            : $"{what}: {reason} (error {status}).");
+    }
+
+    private static string? Describe(int status)
+    {
+        var message = SecCopyErrorMessageString(status, IntPtr.Zero);
+        if (message == IntPtr.Zero) return null;
 
         try
         {
-            using var process = Process.Start(startInfo);
-            if (process is null) return (-1, string.Empty);
-
-            var output = process.StandardOutput.ReadToEnd();
-            process.WaitForExit(10_000);
-            return (process.ExitCode, output);
+            var buffer = new char[checked((int)CFStringGetLength(message))];
+            CFStringGetCharacters(message, new CFRange(0, buffer.Length), buffer);
+            var text = new string(buffer).Trim().TrimEnd('.');
+            return text.Length == 0 ? null : text;
         }
-        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
+        finally
         {
-            return (-1, string.Empty);
+            CFRelease(message);
         }
     }
+
+    // ---- Security and CoreFoundation interop ----
+
+    private const string SecurityFramework = "/System/Library/Frameworks/Security.framework/Security";
+    private const string CoreFoundationFramework = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
+
+    /// <summary>
+    /// The CF objects created for one keychain call, released together when it ends.
+    /// Dictionaries retain what they hold, so the order of release does not matter.
+    /// </summary>
+    private sealed class CFScope : IDisposable
+    {
+        private readonly List<IntPtr> _owned = new();
+
+        public IntPtr String(string value) =>
+            Own(CFStringCreateWithCharacters(IntPtr.Zero, value, value.Length));
+
+        public IntPtr Data(byte[] bytes) =>
+            Own(CFDataCreate(IntPtr.Zero, bytes, bytes.Length));
+
+        public IntPtr Dictionary(params (IntPtr Key, IntPtr Value)[] entries)
+        {
+            var k = Keys.Load();
+            var keys = new IntPtr[entries.Length];
+            var values = new IntPtr[entries.Length];
+            for (var i = 0; i < entries.Length; i++) (keys[i], values[i]) = entries[i];
+
+            return Own(CFDictionaryCreate(IntPtr.Zero, keys, values, entries.Length,
+                                          k.KeyCallBacks, k.ValueCallBacks));
+        }
+
+        private IntPtr Own(IntPtr cf)
+        {
+            // CoreFoundation's create functions return NULL only when allocation fails,
+            // and CFRelease(NULL) would crash the process.
+            if (cf == IntPtr.Zero) throw new OutOfMemoryException();
+            _owned.Add(cf);
+            return cf;
+        }
+
+        public void Dispose()
+        {
+            foreach (var cf in _owned) CFRelease(cf);
+            _owned.Clear();
+        }
+    }
+
+    /// <summary>
+    /// The Keychain Services dictionary keys and values are exported as CFString globals,
+    /// not functions, so DllImport cannot reach them; what those strings contain is not
+    /// part of the API, which rules out spelling them out here.
+    ///
+    /// Loaded on first use rather than in a static initialiser, which would wrap a failed
+    /// load in a TypeInitializationException and replay it on every later call. This way
+    /// Read sees the loader's own exception, and the next call tries again.
+    /// </summary>
+    private sealed class Keys
+    {
+        private static Keys? _loaded;
+
+        public readonly IntPtr Class, GenericPassword, Service, Account, Label, ValueData,
+                               ReturnData, MatchLimit, MatchLimitOne, True,
+                               KeyCallBacks, ValueCallBacks;
+
+        private Keys()
+        {
+            var security = NativeLibrary.Load(SecurityFramework);
+            var coreFoundation = NativeLibrary.Load(CoreFoundationFramework);
+
+            Class = Global(security, "kSecClass");
+            GenericPassword = Global(security, "kSecClassGenericPassword");
+            Service = Global(security, "kSecAttrService");
+            Account = Global(security, "kSecAttrAccount");
+            Label = Global(security, "kSecAttrLabel");
+            ValueData = Global(security, "kSecValueData");
+            ReturnData = Global(security, "kSecReturnData");
+            MatchLimit = Global(security, "kSecMatchLimit");
+            MatchLimitOne = Global(security, "kSecMatchLimitOne");
+            True = Global(coreFoundation, "kCFBooleanTrue");
+
+            // These two are structs that CFDictionaryCreate takes by address, so the
+            // address of the export is the argument, not something read from it.
+            KeyCallBacks = NativeLibrary.GetExport(coreFoundation, "kCFTypeDictionaryKeyCallBacks");
+            ValueCallBacks = NativeLibrary.GetExport(coreFoundation, "kCFTypeDictionaryValueCallBacks");
+        }
+
+        public static Keys Load() => _loaded ??= new Keys();
+
+        private static IntPtr Global(IntPtr library, string symbol) =>
+            Marshal.ReadIntPtr(NativeLibrary.GetExport(library, symbol));
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct CFRange
+    {
+        public readonly nint Location;
+        public readonly nint Length;
+
+        public CFRange(nint location, nint length)
+        {
+            Location = location;
+            Length = length;
+        }
+    }
+
+    [DllImport(SecurityFramework)]
+    private static extern int SecItemAdd(IntPtr attributes, IntPtr result);
+
+    [DllImport(SecurityFramework)]
+    private static extern int SecItemUpdate(IntPtr query, IntPtr attributesToUpdate);
+
+    [DllImport(SecurityFramework)]
+    private static extern int SecItemCopyMatching(IntPtr query, out IntPtr result);
+
+    [DllImport(SecurityFramework)]
+    private static extern int SecItemDelete(IntPtr query);
+
+    [DllImport(SecurityFramework)]
+    private static extern IntPtr SecCopyErrorMessageString(int status, IntPtr reserved);
+
+    [DllImport(CoreFoundationFramework, CharSet = CharSet.Unicode)]
+    private static extern IntPtr CFStringCreateWithCharacters(IntPtr allocator, string characters, nint length);
+
+    [DllImport(CoreFoundationFramework)]
+    private static extern nint CFStringGetLength(IntPtr text);
+
+    [DllImport(CoreFoundationFramework, CharSet = CharSet.Unicode)]
+    private static extern void CFStringGetCharacters(IntPtr text, CFRange range, [Out] char[] buffer);
+
+    [DllImport(CoreFoundationFramework)]
+    private static extern IntPtr CFDataCreate(IntPtr allocator, byte[] bytes, nint length);
+
+    [DllImport(CoreFoundationFramework)]
+    private static extern nint CFDataGetLength(IntPtr data);
+
+    [DllImport(CoreFoundationFramework)]
+    private static extern IntPtr CFDataGetBytePtr(IntPtr data);
+
+    [DllImport(CoreFoundationFramework)]
+    private static extern IntPtr CFDictionaryCreate(IntPtr allocator, IntPtr[] keys, IntPtr[] values,
+        nint count, IntPtr keyCallBacks, IntPtr valueCallBacks);
+
+    [DllImport(CoreFoundationFramework)]
+    private static extern void CFRelease(IntPtr cf);
 }
 
 /// <summary>
