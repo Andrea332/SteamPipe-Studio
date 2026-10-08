@@ -3,6 +3,12 @@ name: Release
 # A release is cut by pushing a tag, and only by pushing a tag. The tag name is
 # the single source of truth for the version: a release cannot exist without one,
 # and the binaries cannot claim a version the tag does not carry.
+#
+# Every platform is packaged with Velopack, which turns one published folder into
+# the installer, the portable archive and the update packages the app's own
+# updater reads back from this repository's releases. The jobs fill a single
+# draft release; publishing it stays a deliberate human click, and that click is
+# also the moment installed copies start offering the update.
 on:
   push:
     tags:
@@ -14,12 +20,19 @@ permissions:
 
 env:
   PROJECT: src/SteamPipeStudio.App
-  RIDS: win-x64 osx-arm64 osx-x64 linux-x64
+  PACK_ID: SteamPipeStudio
+  PACK_TITLE: SteamPipe Studio
+  # Must match the Velopack package version in SteamPipeStudio.App.csproj: the app
+  # and the packer agree on the package format.
+  VPK_VERSION: 1.2.161
 
 jobs:
-  release:
+  # The draft exists before any packaging job starts, so the four of them merge
+  # their files into it instead of racing to create it. The suite runs here, once:
+  # a red suite stops the run before a single asset is uploaded, because a
+  # published release is much harder to retract than a failed build.
+  draft:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -30,54 +43,11 @@ jobs:
         with:
           global-json-file: global.json
 
-      # v1.2.0 -> 1.2.0. The tag keeps the v by convention; MSBuild rejects it.
-      - name: Derive version from tag
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-
-      # A red suite has to stop the run before a single asset is uploaded: a
-      # published release is much harder to retract than a failed build.
       - name: Test
         run: dotnet run --project src/SteamPipeStudio.Tests
 
-      # -p:Version stamps the tag into the assembly, so the version the app
-      # reports and the version on the release cannot disagree. -p:DebugType=none
-      # keeps the .pdb files out of the archives: symbols nobody downloading a
-      # release asked for.
-      - name: Publish every runtime identifier
-        run: |
-          for RID in $RIDS; do
-            echo "::group::$RID"
-            dotnet publish "$PROJECT" -c Release -r "$RID" \
-              -p:PublishSingleFile=true --self-contained false \
-              -p:Version="$VERSION" -p:DebugType=none \
-              -o "out/$RID"
-            echo "::endgroup::"
-          done
-
-      # zip for Windows, tar.gz for everything else. Not a stylistic choice: the
-      # zip format has nowhere to record a Unix permission bit, so a Linux or
-      # macOS binary shipped inside one arrives without +x and will not start.
-      #
-      # --mode and --owner are set explicitly rather than inherited from the
-      # working tree. On this runner the bit would already be right, but stating
-      # it makes the archive identical whatever produced the tree -- and a tree
-      # produced on Windows has no execute bit at all to inherit, because NTFS
-      # cannot store one.
-      - name: Package
-        run: |
-          mkdir -p dist
-          (cd "out/win-x64" && zip -r "$GITHUB_WORKSPACE/dist/SteamPipeStudio-$VERSION-win-x64.zip" .)
-          for RID in $RIDS; do
-            case "$RID" in win-*) continue ;; esac
-            tar --mode=755 --owner=root --group=root \
-              -czf "dist/SteamPipeStudio-$VERSION-$RID.tar.gz" -C "out/$RID" .
-          done
-          ls -l dist
-          tar -tvzf "dist/SteamPipeStudio-$VERSION-linux-x64.tar.gz"
-
-      # Draft, not published. The notes are generated from the commits since the
-      # previous tag and deserve a read before anyone else gets them; publishing
-      # stays a deliberate human click.
+      # The notes are generated from the commits since the previous tag and deserve
+      # a read before anyone else gets them.
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -85,5 +55,95 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             --draft \
             --generate-notes \
-            --title "SteamPipe Studio $VERSION" \
-            dist/*
+            --title "SteamPipe Studio ${GITHUB_REF_NAME#v}"
+
+  package:
+    needs: draft
+    strategy:
+      # One platform failing must not cancel the others: the draft is still
+      # reviewed before it goes out, and a missing platform shows there.
+      fail-fast: false
+      matrix:
+        include:
+          # Windows is packed on Linux: vpk's [win] directive cross-builds the
+          # installer and the portable archive, and the .NET SDK publishes win-x64
+          # from any host. The only thing given up is Authenticode signing, which
+          # this project does not have a certificate for anyway.
+          - { rid: win-x64,   channel: win,       target: win,   os: ubuntu-latest, exe: SteamPipeStudio.exe, icon: icon.ico }
+          - { rid: linux-x64, channel: linux,     target: linux, os: ubuntu-latest, exe: SteamPipeStudio,     icon: icon-512.png }
+          # macOS packaging needs Apple's own tools (pkgbuild, productbuild), which
+          # exist only on a Mac. Each architecture is its own channel, so an Intel
+          # Mac is never offered an Apple-silicon update or the other way round.
+          - { rid: osx-arm64, channel: osx-arm64, target: osx,   os: macos-latest,  exe: SteamPipeStudio,     icon: icon.icns }
+          - { rid: osx-x64,   channel: osx-x64,   target: osx,   os: macos-latest,  exe: SteamPipeStudio,     icon: icon.icns }
+    runs-on: ${{ matrix.os }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      # vpk's default channel and file layout follow the OS it runs on, not the one
+      # being packaged, so every vpk command states the target explicitly.
+      VPK_TARGET: "[${{ matrix.target }}]"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # v1.2.0 -> 1.2.0. The tag keeps the v by convention; MSBuild and vpk reject it.
+      - name: Derive version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Install vpk
+        run: |
+          dotnet tool install --global vpk --version "$VPK_VERSION"
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      # The AppImage is a squashfs image.
+      - name: Install AppImage tooling
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y squashfs-tools
+
+      # Self-contained: the installer and the portable archive must run on a machine
+      # with no .NET at all, and on macOS and Linux Velopack cannot install the
+      # runtime for us. Not single-file either: updates are built as per-file
+      # patches, and one 100 MB file would change completely on every release.
+      # -p:Version stamps the tag into the assembly, so the version the app reports
+      # and the version on the release cannot disagree.
+      - name: Publish
+        run: |
+          dotnet publish "$PROJECT" -c Release -r "${{ matrix.rid }}" --self-contained true \
+            -p:Version="$VERSION" -p:DebugType=none -o publish
+
+      # The previous release's full package, so vpk can build a delta against it:
+      # an update then downloads only what changed — about 100 KB for a small
+      # change, instead of the whole 50 MB package. The first release with Velopack
+      # has nothing to diff against, and vpk carries on without a delta.
+      - name: Fetch the previous release for the delta
+        run: |
+          vpk "$VPK_TARGET" download github \
+            --repoUrl "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --token "$GH_TOKEN" \
+            --channel "${{ matrix.channel }}" --outputDir releases
+
+      - name: Package
+        run: |
+          vpk "$VPK_TARGET" pack \
+            --packId "$PACK_ID" --packVersion "$VERSION" --packTitle "$PACK_TITLE" \
+            --packAuthors "Andrea Galet" \
+            --packDir publish --mainExe "${{ matrix.exe }}" \
+            --icon "src/SteamPipeStudio.App/Assets/${{ matrix.icon }}" \
+            --runtime "${{ matrix.rid }}" --channel "${{ matrix.channel }}" \
+            --outputDir releases
+
+      # Into the draft the first job created. --merge is what allows adding to an
+      # existing release; it refuses a channel that is already there, so re-running
+      # a single failed job needs that channel's releases.<channel>.json deleted
+      # from the draft first.
+      - name: Upload to the draft release
+        run: |
+          vpk "$VPK_TARGET" upload github \
+            --repoUrl "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --token "$GH_TOKEN" \
+            --tag "$GITHUB_REF_NAME" --merge \
+            --channel "${{ matrix.channel }}" --outputDir releases

@@ -9,8 +9,9 @@ namespace SteamPipeStudio.App.ViewModels;
 
 /// <summary>
 /// Hand-rolled MVVM base. CommunityToolkit.Mvvm would do the same job with less typing,
-/// but this keeps the app's dependency list to Avalonia alone, which matters for a tool
-/// meant to be dropped into a studio's build machine without a package audit.
+/// but this keeps the app's dependency list to Avalonia and Velopack (the updater, which has
+/// no dependencies of its own), which matters for a tool meant to be dropped into a
+/// studio's build machine without a long package audit.
 /// </summary>
 public abstract class ViewModelBase : INotifyPropertyChanged
 {
@@ -20,6 +21,21 @@ public abstract class ViewModelBase : INotifyPropertyChanged
     {
         if (EqualityComparer<T>.Default.Equals(field, value)) return false;
         field = value;
+        OnPropertyChanged(propertyName);
+        return true;
+    }
+
+    /// <summary>
+    /// <see cref="SetProperty{T}"/> for a value that lives on a model object rather than
+    /// in a field of the view model: most of these view models are thin editable windows
+    /// onto a <c>BuildProfile</c> or <c>AppSettings</c>, so the backing store is a model
+    /// property that cannot be passed by <c>ref</c>.
+    /// </summary>
+    protected bool SetModel<T>(T current, T value, Action<T> assign,
+                               [CallerMemberName] string? propertyName = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(current, value)) return false;
+        assign(value);
         OnPropertyChanged(propertyName);
         return true;
     }

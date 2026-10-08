@@ -23,16 +23,6 @@ public static class VdfWriter
         return sb.ToString();
     }
 
-    public static void WriteFile(string path, VdfNode root)
-    {
-        var directory = System.IO.Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(directory))
-            System.IO.Directory.CreateDirectory(directory);
-
-        // No BOM: steamcmd's parser treats a leading U+FEFF as part of the first key.
-        System.IO.File.WriteAllText(path, Write(root), new UTF8Encoding(false));
-    }
-
     private static void WriteNode(StringBuilder sb, VdfNode node, int depth)
     {
         var indent = new string('\t', depth);

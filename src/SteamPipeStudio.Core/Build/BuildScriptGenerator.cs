@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using SteamPipeStudio.Core.Model;
+using SteamPipeStudio.Core.Steam;
 using SteamPipeStudio.Core.Vdf;
 
 namespace SteamPipeStudio.Core.Build;
@@ -49,6 +50,8 @@ public static class BuildScriptGenerator
     public static string WriteTo(BuildProfile profile, string directory)
     {
         Directory.CreateDirectory(directory);
+
+        // No BOM: steamcmd's parser treats a leading U+FEFF as part of the first key.
         foreach (var script in Generate(profile))
             File.WriteAllText(Path.Combine(directory, script.FileName), script.Contents,
                               new System.Text.UTF8Encoding(false));
@@ -72,7 +75,7 @@ public static class BuildScriptGenerator
             root.Add("Local", VdfWriter.NormalisePath(profile.LocalContentServerPath));
 
         // Steam rejects SetLive on the default branch; only beta branches auto-publish.
-        if (!string.IsNullOrWhiteSpace(profile.SetLiveBranch) && !IsDefaultBranch(profile.SetLiveBranch))
+        if (!SteamBranch.IsDefault(profile.SetLiveBranch))
             root.Add("SetLive", profile.SetLiveBranch.Trim());
 
         var depotsBlock = root.AddBlock("Depots");
@@ -224,10 +227,6 @@ public static class BuildScriptGenerator
 
     internal static bool ContainsWildcard(string path) =>
         path.Contains('*') || path.Contains('?');
-
-    internal static bool IsDefaultBranch(string branch) =>
-        branch.Trim().Equals("public", StringComparison.OrdinalIgnoreCase) ||
-        branch.Trim().Equals("default", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Newlines and quotes in a build description would corrupt the script; Steam also

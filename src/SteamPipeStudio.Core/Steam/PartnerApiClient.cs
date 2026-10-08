@@ -22,7 +22,21 @@ public sealed record SteamBranch(
     uint BuildId,
     string Description,
     DateTimeOffset? TimeUpdatedUtc,
-    bool PasswordRequired);
+    bool PasswordRequired)
+{
+    /// <summary>
+    /// True for the branch every player gets. Steam's key for it is <c>public</c>; the
+    /// Steamworks site calls it "default", and people type both. Empty counts too,
+    /// because "no branch" means the default one to steamcmd and to a build script.
+    /// One rule for the whole app: it decides what a build script may set live, what
+    /// steamcmd is asked to install, and when promoting a build needs the extra warning.
+    /// </summary>
+    public static bool IsDefault(string? name) =>
+        string.IsNullOrWhiteSpace(name) ||
+        name.Trim() is var trimmed &&
+        (trimmed.Equals("public", StringComparison.OrdinalIgnoreCase) ||
+         trimmed.Equals("default", StringComparison.OrdinalIgnoreCase));
+}
 
 public sealed class PartnerApiException : Exception
 {

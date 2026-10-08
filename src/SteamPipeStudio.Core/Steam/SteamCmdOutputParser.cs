@@ -43,10 +43,12 @@ public sealed record SteamCmdEvent(
 /// stops being detected as successful after an SDK update, this file — and only this
 /// file — is what needs updating.
 /// </summary>
-public static class SteamCmdOutputParser
+public static partial class SteamCmdOutputParser
 {
-    private const RegexOptions Options =
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled;
+    // Source-generated rather than RegexOptions.Compiled: the matchers are emitted at
+    // build time, so the first line steamcmd prints does not pay for compiling two dozen
+    // expressions, and a malformed pattern is a build error instead of a crash mid-upload.
+    private const RegexOptions Options = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
 
     // The build-finished line. Valve has reworded it between SDK releases and both
     // shapes are in the wild:
@@ -55,35 +57,36 @@ public static class SteamCmdOutputParser
     // Only "successfully finished appID <n>" is required here, because getting this
     // wrong is expensive: an unrecognised line makes a perfectly good upload report
     // itself as "steamcmd exited cleanly but never reported a finished build".
-    private static readonly Regex BuildSucceeded = new(
-        @"success(?:fully)?\s+finished\s+app\s*id\s*(?<app>\d+)(?<tail>.*)", Options);
+    [GeneratedRegex(@"success(?:fully)?\s+finished\s+app\s*id\s*(?<app>\d+)(?<tail>.*)", Options)]
+    private static partial Regex BuildSucceeded { get; }
 
     // The build id off the tail of that line. Both wordings end with it — "- build
     // 12345678" and "(BuildID 12345678)." — so it is read from the end rather than
     // matched against a fixed label.
-    private static readonly Regex TrailingBuildId = new(@"(?<build>\d{4,})\D*$", Options);
+    [GeneratedRegex(@"(?<build>\d{4,})\D*$", Options)]
+    private static partial Regex TrailingBuildId { get; }
 
     // Some SDK builds print: "Uploading build ... BuildID 12345678"
-    private static readonly Regex BuildIdOnly = new(
-        @"\bbuild\s*id\b\D{0,4}(?<build>\d{4,})", Options);
+    [GeneratedRegex(@"\bbuild\s*id\b\D{0,4}(?<build>\d{4,})", Options)]
+    private static partial Regex BuildIdOnly { get; }
 
-    private static readonly Regex BuildFailed = new(
-        @"(?:ERROR!\s*)?Failed\s+to\s+(?:build|upload|commit)|AppID\s+\d+\s+build\s+failed", Options);
+    [GeneratedRegex(@"(?:ERROR!\s*)?Failed\s+to\s+(?:build|upload|commit)|AppID\s+\d+\s+build\s+failed", Options)]
+    private static partial Regex BuildFailed { get; }
 
-    private static readonly Regex LoginFailed = new(
-        @"FAILED\s*(?:login)?\s*(?:with\s+result\s+code)?\s*[:(]?\s*(?<reason>[A-Za-z ]+)", Options);
+    [GeneratedRegex(@"FAILED\s*(?:login)?\s*(?:with\s+result\s+code)?\s*[:(]?\s*(?<reason>[A-Za-z ]+)", Options)]
+    private static partial Regex LoginFailed { get; }
 
     // Deliberately does not accept a bare "OK". steamcmd's own console log splits
     // "Loading Steam API...OK" across two lines, and reading that lone OK as a completed
     // login would announce a session that does not exist yet — and, worse, tell the
     // runner to stop watching for the login prompt that is about to appear.
-    private static readonly Regex LoginOk = new(
-        @"^\s*(?:Logged\s+in\s+OK|Waiting\s+for\s+(?:client\s+config|user\s+info))", Options);
+    [GeneratedRegex(@"^\s*(?:Logged\s+in\s+OK|Waiting\s+for\s+(?:client\s+config|user\s+info))", Options)]
+    private static partial Regex LoginOk { get; }
 
     // "Logging in user 'x' [U:1:0] to Steam Public...OK" — the verdict is appended to the
     // line that announces the attempt, so it has to be read before LoggingIn below.
-    private static readonly Regex LoginResultOk = new(
-        @"to\s+Steam\s+\S+\s*\.{2,}\s*OK\b", Options);
+    [GeneratedRegex(@"to\s+Steam\s+\S+\s*\.{2,}\s*OK\b", Options)]
+    private static partial Regex LoginResultOk { get; }
 
     /// <summary>
     /// The <c>[2026-08-21 16:12:10] </c> stamp steamcmd puts on every line of its own
@@ -97,68 +100,69 @@ public static class SteamCmdOutputParser
     /// the bracket. In the log file such a line carries both stamps. Stripping the inner
     /// one as well leaves the file's copy and the pipe's copy of the same message looking
     /// different, and every one of them then prints twice.
-    private static readonly Regex LogTimestamp = new(
-        @"^\s*\[\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}\](?!:)\s?", Options);
+    [GeneratedRegex(@"^\s*\[\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}\](?!:)\s?", Options)]
+    private static partial Regex LogTimestamp { get; }
 
-    private static readonly Regex LoggingIn = new(
-        @"Logging\s+in\s+user\s+'(?<user>[^']*)'", Options);
+    [GeneratedRegex(@"Logging\s+in\s+user\s+'(?<user>[^']*)'", Options)]
+    private static partial Regex LoggingIn { get; }
 
     // "Logging in user 'x' [U:1:0] to Steam Public...ERROR (Invalid Password)". The
     // result is appended to the same line that announces the attempt, so without this the
     // LoggingIn pattern above claims the line first and a rejected login is reported as
     // routine chatter — leaving the user with a bare exit code instead of the reason.
-    private static readonly Regex LoginResultFailed = new(
-        @"to\s+Steam\s+\S+\s*\.{2,}\s*(?:ERROR|FAILED)\s*\(?\s*(?<reason>[^)\r\n]*)", Options);
+    [GeneratedRegex(@"to\s+Steam\s+\S+\s*\.{2,}\s*(?:ERROR|FAILED)\s*\(?\s*(?<reason>[^)\r\n]*)", Options)]
+    private static partial Regex LoginResultFailed { get; }
 
-    private static readonly Regex SteamGuard = new(
-        @"(?:Steam\s*Guard|Two-?factor)\s*code|please\s+check\s+your\s+email|mobile\s+authenticator", Options);
+    [GeneratedRegex(@"(?:Steam\s*Guard|Two-?factor)\s*code|please\s+check\s+your\s+email|mobile\s+authenticator", Options)]
+    private static partial Regex SteamGuard { get; }
 
-    private static readonly Regex PasswordPrompt = new(@"^\s*password\s*:", Options);
+    [GeneratedRegex(@"^\s*password\s*:", Options)]
+    private static partial Regex PasswordPrompt { get; }
 
-    private static readonly Regex DepotScanning = new(
-        @"(?:Scanning|Building\s+file\s+mapping|Building)\s+depot\s+(?<depot>\d+)|Scanning\s+content", Options);
+    [GeneratedRegex(@"(?:Scanning|Building\s+file\s+mapping|Building)\s+depot\s+(?<depot>\d+)|Scanning\s+content", Options)]
+    private static partial Regex DepotScanning { get; }
 
-    private static readonly Regex DepotUploading = new(
-        @"Uploading\s+(?:depot\s+(?<depot>\d+)\s+)?content", Options);
+    [GeneratedRegex(@"Uploading\s+(?:depot\s+(?<depot>\d+)\s+)?content", Options)]
+    private static partial Regex DepotUploading { get; }
 
-    private static readonly Regex DepotCommitted = new(
-        @"Depot\s+Build\s+for\s+DepotID\s+(?<depot>\d+)|Successfully\s+committed\s+depot\s+(?<depot2>\d+)", Options);
+    [GeneratedRegex(@"Depot\s+Build\s+for\s+DepotID\s+(?<depot>\d+)|Successfully\s+committed\s+depot\s+(?<depot2>\d+)", Options)]
+    private static partial Regex DepotCommitted { get; }
 
     // steamcmd's own self-update banner: "[  0%] Checking for available updates..."
-    private static readonly Regex BootstrapProgress = new(
-        @"^\s*\[\s*(?<pct>\d{1,3})%\]\s*(?<text>.*)$", Options);
+    [GeneratedRegex(@"^\s*\[\s*(?<pct>\d{1,3})%\]\s*(?<text>.*)$", Options)]
+    private static partial Regex BootstrapProgress { get; }
 
     // Generic "42.13%" or "42%" anywhere in the line.
-    private static readonly Regex InlinePercent = new(
-        @"(?<pct>\d{1,3}(?:\.\d+)?)\s*%", Options);
+    [GeneratedRegex(@"(?<pct>\d{1,3}(?:\.\d+)?)\s*%", Options)]
+    private static partial Regex InlinePercent { get; }
 
-    private static readonly Regex GenericError = new(
-        @"^\s*(?:ERROR!?|FATAL|Fatal\s+Error)\b", Options);
+    [GeneratedRegex(@"^\s*(?:ERROR!?|FATAL|Fatal\s+Error)\b", Options)]
+    private static partial Regex GenericError { get; }
 
     // ---- app_update, i.e. downloading a build ----
     //
     // " Update state (0x61) downloading, progress: 45.17 (1234567 / 2734567)". There is
     // no percent sign, so the generic percent pattern below never sees these, and the
     // state name is worth showing: "verifying install" for minutes is not a hang.
-    private static readonly Regex UpdateState = new(
-        @"Update\s+state\s*\(0x[0-9A-F]+\)\s*(?<state>[^,(]*?)\s*(?:,\s*progress:\s*(?<pct>\d{1,3}(?:\.\d+)?))?\s*(?:\(|$)",
-        Options);
+    [GeneratedRegex(@"Update\s+state\s*\(0x[0-9A-F]+\)\s*(?<state>[^,(]*?)\s*(?:,\s*progress:\s*(?<pct>\d{1,3}(?:\.\d+)?))?\s*(?:\(|$)",
+        Options)]
+    private static partial Regex UpdateState { get; }
 
     // "Success! App '480' fully installed." — the only line that means the download is
     // complete. As with the build-finished line, the exit code alone is not trusted.
-    private static readonly Regex AppInstalled = new(
-        @"Success!\s*App\s*'?(?<app>\d+)'?\s*fully\s+installed", Options);
+    [GeneratedRegex(@"Success!\s*App\s*'?(?<app>\d+)'?\s*fully\s+installed", Options)]
+    private static partial Regex AppInstalled { get; }
 
     // "Error! App '480' state is 0x202 after update job." — the state is the only clue
     // steamcmd gives, and the common ones have well-known meanings.
-    private static readonly Regex AppUpdateFailed = new(
-        @"Error!\s*App\s*'?(?<app>\d+)'?\s*state\s+is\s+(?<state>0x[0-9A-F]+)\s+after\s+update\s+job",
-        Options);
+    [GeneratedRegex(@"Error!\s*App\s*'?(?<app>\d+)'?\s*state\s+is\s+(?<state>0x[0-9A-F]+)\s+after\s+update\s+job",
+        Options)]
+    private static partial Regex AppUpdateFailed { get; }
 
     // "ERROR! Failed to install app '480' (No subscription)" — refused before anything
     // was downloaded; the reason in brackets is Steam's own wording.
-    private static readonly Regex AppInstallRefused = new(
-        @"Failed\s+to\s+install\s+app\s*'?(?<app>\d+)'?\s*\((?<reason>[^)]*)\)", Options);
+    [GeneratedRegex(@"Failed\s+to\s+install\s+app\s*'?(?<app>\d+)'?\s*\((?<reason>[^)]*)\)", Options)]
+    private static partial Regex AppInstallRefused { get; }
 
     /// <summary>
     /// The same line without steamcmd's log stamp, used to recognise a line that arrives

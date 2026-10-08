@@ -22,7 +22,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private ProfileViewModel? _selectedProfile;
     private string _status = "Ready.";
 
-    public MainWindowViewModel(ProfileStore store, AppSettings settings, Window owner)
+    public MainWindowViewModel(ProfileStore store, AppSettings settings, Window owner, IAppUpdater updater)
     {
         _store = store;
         _settings = settings;
@@ -43,12 +43,16 @@ public sealed class MainWindowViewModel : ViewModelBase
                 Persist: PersistModel));
         Settings = new SettingsViewModel(_settings, store, _secrets,
             title => _prompt.PickFolderAsync(title, _settings.ContentBuilderPath));
+        Updates = new UpdatesViewModel(updater, _settings, store, () => Upload.IsRunning, PersistAll);
 
-        // The Download buttons on the Builds tab are disabled while steamcmd is busy on
-        // the Upload tab, and nothing else tells them when that changes.
+        // The Download buttons on the Builds tab and the update's Install button are
+        // disabled while steamcmd is busy on the Upload tab, and nothing else tells them
+        // when that changes.
         Upload.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(UploadViewModel.IsRunning)) Builds.RefreshCommandStates();
+            if (e.PropertyName != nameof(UploadViewModel.IsRunning)) return;
+            Builds.RefreshCommandStates();
+            Updates.RefreshCommandStates();
         };
 
         NewProfileCommand = new RelayCommand(NewProfile);
@@ -94,6 +98,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public UploadViewModel Upload { get; }
     public BuildsViewModel Builds { get; }
     public SettingsViewModel Settings { get; }
+    public UpdatesViewModel Updates { get; }
 
     public RelayCommand NewProfileCommand { get; }
     public RelayCommand DuplicateProfileCommand { get; }

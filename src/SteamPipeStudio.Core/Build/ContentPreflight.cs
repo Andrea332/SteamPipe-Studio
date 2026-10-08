@@ -58,6 +58,10 @@ public static class ContentPreflight
     {
         var depots = new List<DepotPreflight>();
 
+        // Depots usually share the project's content root and differ only in their
+        // mappings, so each folder is walked once however many depots read from it.
+        var listings = new Dictionary<string, IReadOnlyList<ContentFile>>(PathComparer);
+
         foreach (var depot in profile.Depots.Where(d => d.Enabled))
         {
             cancellation.ThrowIfCancellationRequested();
@@ -66,44 +70,42 @@ public static class ContentPreflight
                 ? profile.ContentRoot
                 : depot.ContentRootOverride;
 
-            depots.Add(RunDepot(depot, root, cancellation));
+            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+            {
+                depots.Add(new DepotPreflight(depot.DepotId, Array.Empty<PreflightFile>(),
+                                              new[] { $"Content root not found: {root}" }));
+                continue;
+            }
+
+            var key = Path.GetFullPath(root);
+            if (!listings.TryGetValue(key, out var files))
+                listings[key] = files = List(key, cancellation);
+
+            depots.Add(RunDepot(depot, files, cancellation));
         }
 
         return new PreflightResult(depots);
     }
 
-    private static DepotPreflight RunDepot(DepotDefinition depot, string contentRoot,
+    private static DepotPreflight RunDepot(DepotDefinition depot, IReadOnlyList<ContentFile> allFiles,
                                            CancellationToken cancellation)
     {
         var notes = new List<string>();
 
-        if (string.IsNullOrWhiteSpace(contentRoot) || !Directory.Exists(contentRoot))
-        {
-            notes.Add($"Content root not found: {contentRoot}");
-            return new DepotPreflight(depot.DepotId, Array.Empty<PreflightFile>(), notes);
-        }
-
         // Relative path -> file. A dictionary because two mappings may match the same
         // file; SteamPipe takes the last mapping to win, so later writes overwrite.
         var selected = new Dictionary<string, PreflightFile>(PathComparer);
-        var allFiles = EnumerateRelative(contentRoot, cancellation).ToList();
 
         foreach (var mapping in depot.FileMappings)
         {
             cancellation.ThrowIfCancellationRequested();
             var matched = 0;
 
-            foreach (var relative in allFiles)
+            foreach (var (relative, length) in allFiles)
             {
                 if (!MatchesMapping(relative, mapping)) continue;
 
-                var depotPath = ToDepotPath(relative, mapping);
-                var fullPath = Path.Combine(contentRoot, relative);
-                long length;
-                try { length = new FileInfo(fullPath).Length; }
-                catch (IOException) { continue; }
-
-                selected[relative] = new PreflightFile(relative, depotPath, length);
+                selected[relative] = new PreflightFile(relative, ToDepotPath(relative, mapping), length);
                 matched++;
             }
 
@@ -144,7 +146,15 @@ public static class ContentPreflight
     private static StringComparison PathComparison =>
         OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 
-    private static IEnumerable<string> EnumerateRelative(string root, CancellationToken cancellation)
+    private readonly record struct ContentFile(string RelativePath, long Length);
+
+    /// <summary>
+    /// Every file under <paramref name="root"/> with its size. The size comes from the
+    /// directory listing itself — on Windows the enumeration already carries it — rather
+    /// than from a second lookup per file, which on a build of tens of thousands of files,
+    /// or one on a network share, was the slow half of the preview.
+    /// </summary>
+    private static IReadOnlyList<ContentFile> List(string root, CancellationToken cancellation)
     {
         var options = new EnumerationOptions
         {
@@ -154,11 +164,20 @@ public static class ContentPreflight
             AttributesToSkip = FileAttributes.ReparsePoint
         };
 
-        foreach (var full in Directory.EnumerateFiles(root, "*", options))
+        var files = new List<ContentFile>();
+
+        foreach (var file in new DirectoryInfo(root).EnumerateFiles("*", options))
         {
             cancellation.ThrowIfCancellationRequested();
-            yield return Normalise(Path.GetRelativePath(root, full));
+
+            long length;
+            try { length = file.Length; }
+            catch (IOException) { continue; }   // deleted between the listing and now
+
+            files.Add(new ContentFile(Normalise(Path.GetRelativePath(root, file.FullName)), length));
         }
+
+        return files;
     }
 
     internal static string Normalise(string path) => path.Replace('\\', '/').TrimStart('.', '/');

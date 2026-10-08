@@ -1,5 +1,8 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:SteamPipeStudio.App.ViewModels"
+        xmlns:steam="using:SteamPipeStudio.Core.Steam"
+        x:DataType="vm:MainWindowViewModel"
         x:Class="SteamPipeStudio.App.Views.MainWindow"
         Title="SteamPipe Studio"
         Icon="avares://SteamPipeStudio/Assets/icon.ico"
@@ -47,7 +50,7 @@
                  SelectedItem="{Binding SelectedProfile, Mode=TwoWay}"
                  Background="Transparent">
           <ListBox.ItemTemplate>
-            <DataTemplate>
+            <DataTemplate x:DataType="vm:ProfileViewModel">
               <StackPanel Spacing="2" Margin="0,4">
                 <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                 <TextBlock Text="{Binding AppIdText, StringFormat='AppID {0}'}" Classes="hint" />
@@ -72,7 +75,7 @@
         <!-- ============================ Project ============================ -->
         <TabItem Header="Project">
           <ScrollViewer>
-            <StackPanel Margin="4,12,12,12" DataContext="{Binding SelectedProfile}">
+            <StackPanel Margin="4,12,12,12" DataContext="{Binding SelectedProfile}" x:DataType="vm:ProfileViewModel">
 
               <Border Classes="card">
                 <Grid ColumnDefinitions="150,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
@@ -95,13 +98,13 @@
                   <TextBox Grid.Row="3" Grid.Column="1" Margin="0,0,8,8"
                            Text="{Binding ContentRoot, Mode=TwoWay}" />
                   <Button Grid.Row="3" Grid.Column="2" Content="Browse…" Margin="0,0,0,8"
-                          Command="{Binding $parent[Window].DataContext.BrowseContentRootCommand}" />
+                          Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).BrowseContentRootCommand}" />
 
                   <TextBlock Grid.Row="4" Grid.Column="0" Text="Build output" Classes="label" />
                   <TextBox Grid.Row="4" Grid.Column="1" Margin="0,0,8,4"
                            Text="{Binding BuildOutput, Mode=TwoWay}" />
                   <Button Grid.Row="4" Grid.Column="2" Content="Browse…" Margin="0,0,0,4"
-                          Command="{Binding $parent[Window].DataContext.BrowseBuildOutputCommand}" />
+                          Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).BrowseBuildOutputCommand}" />
 
                   <TextBlock Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2" Classes="hint"
                              Text="Logs and the chunk cache land here. Keep it outside the content folder, or the cache ends up inside your game." />
@@ -153,12 +156,12 @@
 
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <Button Content="Save"
-                        Command="{Binding $parent[Window].DataContext.SaveProfileCommand}" />
+                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SaveProfileCommand}" />
                 <Button Content="Export .vdf scripts…"
-                        Command="{Binding $parent[Window].DataContext.ExportScriptsCommand}"
+                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ExportScriptsCommand}"
                         ToolTip.Tip="Write the generated app and depot scripts to a folder." />
                 <Button Content="Export GitHub Actions workflow…"
-                        Command="{Binding $parent[Window].DataContext.ExportWorkflowCommand}"
+                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ExportWorkflowCommand}"
                         ToolTip.Tip="Produce a CI workflow that performs this same upload." />
                 <TextBlock Text="{Binding LastBuildSummary}" Classes="hint" VerticalAlignment="Center" />
               </StackPanel>
@@ -181,7 +184,7 @@
             <ScrollViewer>
               <ItemsControl ItemsSource="{Binding SelectedProfile.Depots}">
                 <ItemsControl.ItemTemplate>
-                  <DataTemplate>
+                  <DataTemplate x:DataType="vm:DepotViewModel">
                     <Expander Header="{Binding Header}" IsExpanded="True" Margin="0,0,0,10"
                               HorizontalAlignment="Stretch">
                       <StackPanel Margin="8">
@@ -196,7 +199,7 @@
                             <CheckBox Content="Enabled" IsChecked="{Binding Enabled, Mode=TwoWay}"
                                       VerticalAlignment="Center" />
                             <Button Content="Remove depot"
-                                    Command="{Binding $parent[Window].DataContext.SelectedProfile.RemoveDepotCommand}"
+                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SelectedProfile.RemoveDepotCommand}"
                                     CommandParameter="{Binding}" />
                           </StackPanel>
                         </Grid>
@@ -213,7 +216,7 @@
 
                         <ItemsControl ItemsSource="{Binding Mappings}">
                           <ItemsControl.ItemTemplate>
-                            <DataTemplate>
+                            <DataTemplate x:DataType="vm:FileMappingViewModel">
                               <Grid ColumnDefinitions="*,8,*,8,Auto,8,Auto" Margin="0,0,0,6">
                                 <TextBox Grid.Column="0" Text="{Binding LocalPath, Mode=TwoWay}"
                                          Watermark="Local path (e.g. *)" />
@@ -223,7 +226,7 @@
                                           IsChecked="{Binding Recursive, Mode=TwoWay}"
                                           VerticalAlignment="Center" />
                                 <Button Grid.Column="6" Content="✕"
-                                        Command="{Binding $parent[Expander].DataContext.RemoveMappingCommand}"
+                                        Command="{Binding $parent[Expander].((vm:DepotViewModel)DataContext).RemoveMappingCommand}"
                                         CommandParameter="{Binding}" />
                               </Grid>
                             </DataTemplate>
@@ -239,12 +242,12 @@
 
                         <ItemsControl ItemsSource="{Binding Exclusions}">
                           <ItemsControl.ItemTemplate>
-                            <DataTemplate>
+                            <DataTemplate x:DataType="vm:TextItemViewModel">
                               <Grid ColumnDefinitions="*,8,Auto" Margin="0,0,0,6">
                                 <TextBox Grid.Column="0" Text="{Binding Value, Mode=TwoWay}"
                                          Watermark="e.g. *.pdb" />
                                 <Button Grid.Column="2" Content="✕"
-                                        Command="{Binding $parent[Expander].DataContext.RemoveExclusionCommand}"
+                                        Command="{Binding $parent[Expander].((vm:DepotViewModel)DataContext).RemoveExclusionCommand}"
                                         CommandParameter="{Binding}" />
                               </Grid>
                             </DataTemplate>
@@ -272,7 +275,7 @@
 
         <!-- ============================ Upload ============================ -->
         <TabItem Header="Upload">
-          <DockPanel Margin="4,12,12,12" DataContext="{Binding Upload}">
+          <DockPanel Margin="4,12,12,12" DataContext="{Binding Upload}" x:DataType="vm:UploadViewModel">
 
             <StackPanel DockPanel.Dock="Top" Spacing="10">
 
@@ -289,7 +292,7 @@
 
               <ItemsControl ItemsSource="{Binding Issues}">
                 <ItemsControl.ItemTemplate>
-                  <DataTemplate>
+                  <DataTemplate x:DataType="vm:ValidationIssueViewModel">
                     <Border CornerRadius="8" Padding="10" Margin="0,0,0,6"
                             Classes.iserror="{Binding IsError}"
                             Classes.iswarning="{Binding IsWarning}"
@@ -308,13 +311,13 @@
                 <TextBlock Text="{Binding PreflightSummary}" FontWeight="SemiBold" />
                 <ItemsControl ItemsSource="{Binding PreflightDepots}">
                   <ItemsControl.ItemTemplate>
-                    <DataTemplate>
+                    <DataTemplate x:DataType="vm:DepotPreflightViewModel">
                       <Expander Margin="0,4,0,0" HorizontalAlignment="Stretch"
                                 Header="{Binding Summary}">
                         <StackPanel Margin="8" Spacing="4">
                           <ItemsControl ItemsSource="{Binding Notes}">
                             <ItemsControl.ItemTemplate>
-                              <DataTemplate>
+                              <DataTemplate x:DataType="x:String">
                                 <TextBlock Text="{Binding}" TextWrapping="Wrap"
                                            Foreground="{DynamicResource LogWarning}" />
                               </DataTemplate>
@@ -323,7 +326,7 @@
                           <TextBlock Text="Largest files" Classes="h2" />
                           <ItemsControl ItemsSource="{Binding LargestFiles}">
                             <ItemsControl.ItemTemplate>
-                              <DataTemplate>
+                              <DataTemplate x:DataType="x:String">
                                 <TextBlock Text="{Binding}" FontFamily="Consolas,Menlo,monospace" FontSize="12" />
                               </DataTemplate>
                             </ItemsControl.ItemTemplate>
@@ -368,7 +371,7 @@
                   </ContextMenu>
                 </ListBox.ContextMenu>
                 <ListBox.ItemTemplate>
-                  <DataTemplate>
+                  <DataTemplate x:DataType="vm:LogLineViewModel">
                     <TextBlock Text="{Binding Text}"
                                FontFamily="Consolas,Menlo,monospace"
                                FontSize="12"
@@ -387,7 +390,7 @@
 
         <!-- ============================ Builds ============================ -->
         <TabItem Header="Builds">
-          <DockPanel Margin="4,12,12,12" DataContext="{Binding Builds}">
+          <DockPanel Margin="4,12,12,12" DataContext="{Binding Builds}" x:DataType="vm:BuildsViewModel">
 
             <StackPanel DockPanel.Dock="Top" Spacing="10">
               <StackPanel Orientation="Horizontal" Spacing="8">
@@ -397,7 +400,7 @@
                           MinWidth="200"
                           PlaceholderText="Branch">
                   <ComboBox.ItemTemplate>
-                    <DataTemplate>
+                    <DataTemplate x:DataType="steam:SteamBranch">
                       <TextBlock Text="{Binding Name}" />
                     </DataTemplate>
                   </ComboBox.ItemTemplate>
@@ -415,7 +418,7 @@
                           MinWidth="150"
                           ToolTip.Tip="Which platform's depots steamcmd fetches. Leave it on this machine unless you want to look at another platform's build.">
                   <ComboBox.ItemTemplate>
-                    <DataTemplate>
+                    <DataTemplate x:DataType="vm:PlatformChoice">
                       <TextBlock Text="{Binding Label}" />
                     </DataTemplate>
                   </ComboBox.ItemTemplate>
@@ -449,7 +452,7 @@
                 <ListBox ItemsSource="{Binding Builds}"
                          SelectedItem="{Binding SelectedBuild, Mode=TwoWay}">
                   <ListBox.ItemTemplate>
-                    <DataTemplate>
+                    <DataTemplate x:DataType="vm:BuildRowViewModel">
                       <Grid ColumnDefinitions="110,170,160,*,100">
                         <TextBlock Grid.Column="0" Text="{Binding BuildId}"
                                    FontFamily="Consolas,Menlo,monospace" VerticalAlignment="Center" />
@@ -464,7 +467,7 @@
                              because "why can't I download this one" is the question. -->
                         <Button Grid.Column="4" Content="Download" HorizontalAlignment="Right"
                                 Padding="10,4" MinHeight="0"
-                                Command="{Binding $parent[ListBox].DataContext.DownloadCommand}"
+                                Command="{Binding $parent[ListBox].((vm:BuildsViewModel)DataContext).DownloadCommand}"
                                 CommandParameter="{Binding}"
                                 ToolTip.Tip="{Binding DownloadHint}"
                                 ToolTip.ShowOnDisabled="True" />
@@ -481,7 +484,7 @@
         <!-- ============================ Settings ============================ -->
         <TabItem Header="Settings">
           <ScrollViewer>
-            <StackPanel Margin="4,12,12,12" DataContext="{Binding Settings}">
+            <StackPanel Margin="4,12,12,12" DataContext="{Binding Settings}" x:DataType="vm:SettingsViewModel">
 
               <Border Classes="card">
                 <StackPanel Spacing="6">
@@ -532,6 +535,30 @@
                 </StackPanel>
               </Border>
 
+              <Border Classes="card" x:DataType="vm:UpdatesViewModel"
+                      DataContext="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Updates}">
+                <StackPanel Spacing="8">
+                  <TextBlock Text="Updates" Classes="h1" />
+                  <TextBlock Text="{Binding CurrentVersion}" />
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Check for updates" Command="{Binding CheckCommand}" />
+                    <Button Content="{Binding InstallLabel}" Command="{Binding InstallCommand}"
+                            Classes="accent" IsVisible="{Binding IsUpdateAvailable}" />
+                    <Button Content="Releases page" Command="{Binding OpenReleasesCommand}"
+                            ToolTip.Tip="Release notes, and the installer and portable downloads for every version." />
+                  </StackPanel>
+                  <ProgressBar Minimum="0" Maximum="100" Height="6"
+                               Value="{Binding DownloadProgress, Mode=OneWay}"
+                               IsVisible="{Binding IsDownloading}" />
+                  <TextBlock Text="{Binding Status}" Classes="hint"
+                             IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                  <CheckBox Content="Check for updates when the app starts"
+                            IsChecked="{Binding CheckAtStartup, Mode=TwoWay}" />
+                  <TextBlock Classes="hint"
+                             Text="An update is only ever offered. It installs when you click the button, never during an upload, and your projects and saved passwords are kept." />
+                </StackPanel>
+              </Border>
+
             </StackPanel>
           </ScrollViewer>
         </TabItem>
@@ -542,10 +569,16 @@
     <!-- ============================ Status bar ============================ -->
     <Border Grid.Row="1" Grid.ColumnSpan="2" Padding="12,8"
             Background="{DynamicResource SidebarBackground}">
-      <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Grid.Column="0" Text="{Binding Status}" TextTrimming="CharacterEllipsis" />
-        <TextBlock Grid.Column="1" Text="{Binding Upload.Status}" Classes="hint"
-                   TextTrimming="CharacterEllipsis" MaxWidth="520" />
+      <Grid ColumnDefinitions="*,Auto,Auto">
+        <TextBlock Grid.Column="0" Text="{Binding Status}" TextTrimming="CharacterEllipsis"
+                   VerticalAlignment="Center" />
+        <Button Grid.Column="1" Classes="accent" Margin="12,0" Padding="10,2" MinHeight="0"
+                Content="{Binding Updates.InstallLabel}"
+                Command="{Binding Updates.InstallCommand}"
+                IsVisible="{Binding Updates.IsUpdateAvailable}"
+                ToolTip.Tip="Downloads the new version, saves your projects and restarts. Unavailable while steamcmd is running." />
+        <TextBlock Grid.Column="2" Text="{Binding Upload.Status}" Classes="hint"
+                   TextTrimming="CharacterEllipsis" MaxWidth="520" VerticalAlignment="Center" />
       </Grid>
     </Border>
 

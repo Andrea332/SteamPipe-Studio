@@ -68,37 +68,13 @@ public sealed class SteamCmdSession
 
     public event Action<SteamCmdEvent>? Output;
 
-    /// <summary>
-    /// Verifies that the cached session still works, without touching a build.
-    /// Runs <c>+login &lt;account&gt; +info +quit</c>, which is cheap and prints the
-    /// account state.
-    /// </summary>
-    public async Task<bool> TestLoginAsync(string contentBuilderPath, string accountName,
-                                           CancellationToken cancellation = default)
-    {
-        if (!SteamCmdLocator.TryLocate(contentBuilderPath, out var steamCmd, out var error))
-            throw new FileNotFoundException(error);
-
-        var runner = CreateRunner();
-        var result = await runner
-            .RunAsync(steamCmd, new[] { "+login", accountName, "+info", "+quit" }, cancellation)
-            .ConfigureAwait(false);
-
-        return result.ExitCode == 0 && result.FailureDetail is null;
-    }
-
     public async Task<UploadOutcome> UploadAsync(
         BuildProfile profile,
         AppSettings settings,
         string scriptOutputDirectory,
         CancellationToken cancellation = default)
     {
-        var contentBuilderPath = !string.IsNullOrWhiteSpace(profile.ContentBuilderPathOverride)
-            ? profile.ContentBuilderPathOverride
-            : settings.ContentBuilderPath;
-
-        if (!SteamCmdLocator.TryLocate(contentBuilderPath, out var steamCmd, out var error))
-            throw new FileNotFoundException(error);
+        var steamCmd = LocateSteamCmd(profile, settings);
 
         var issues = BuildValidator.Validate(profile, settings);
         if (BuildValidator.HasBlockingIssues(issues))
@@ -162,13 +138,7 @@ public sealed class SteamCmdSession
         if (DownloadProblem(profile, request) is { } problem)
             throw new InvalidOperationException(problem);
 
-        var contentBuilderPath = !string.IsNullOrWhiteSpace(profile.ContentBuilderPathOverride)
-            ? profile.ContentBuilderPathOverride
-            : settings.ContentBuilderPath;
-
-        if (!SteamCmdLocator.TryLocate(contentBuilderPath, out var steamCmd, out var error))
-            throw new FileNotFoundException(error);
-
+        var steamCmd = LocateSteamCmd(profile, settings);
         var installDirectory = Path.GetFullPath(request.InstallDirectory);
 
         // steamcmd would create it too, but creating it here turns a permissions problem
@@ -281,7 +251,7 @@ public sealed class SteamCmdSession
 
         // "-beta public" is not a thing steamcmd understands as "the default branch";
         // leaving the switch off is.
-        if (!IsDefaultBranch(branch))
+        if (!SteamBranch.IsDefault(branch))
         {
             yield return "-beta";
             yield return branch;
@@ -298,9 +268,6 @@ public sealed class SteamCmdSession
         // second build into the same folder an incremental update rather than a mess.
         yield return "validate";
     }
-
-    internal static bool IsDefaultBranch(string? branch) =>
-        string.IsNullOrWhiteSpace(branch) || branch.Equals("public", StringComparison.OrdinalIgnoreCase);
 
     private static string? PlatformName(DownloadPlatform platform) => platform switch
     {
@@ -387,6 +354,13 @@ public sealed class SteamCmdSession
             Output?.Invoke(new SteamCmdEvent(SteamCmdEventKind.Raw,
                 $"Could not pre-run steamcmd ({e.Message}); continuing."));
         }
+    }
+
+    private static string LocateSteamCmd(BuildProfile profile, AppSettings settings)
+    {
+        if (!SteamCmdLocator.TryLocate(profile.ContentBuilderPath(settings), out var steamCmd, out var error))
+            throw new FileNotFoundException(error);
+        return steamCmd;
     }
 
     private SteamCmdRunner CreateRunner()

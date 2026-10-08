@@ -61,32 +61,58 @@ Not affiliated with or endorsed by Valve.
   be driven by clicking is a tool a team eventually has to replace.
 - **Runs anywhere `steamcmd` does.** The Windows-only limitation of the original was
   never inherent: which builder you run has nothing to do with which platform you ship.
+- **Keeps itself up to date, and only when you say so.** Installed and portable copies
+  look for a newer release when they start and offer it in the status bar. Clicking it
+  downloads only what changed, saves everything you typed and restarts into the new
+  version — never while `steamcmd` is running.
 
 ## Requirements
 
 - A copy of the [Steamworks SDK](https://partner.steamgames.com/doc/sdk) — the app needs
   the `sdk/tools/ContentBuilder` folder from it
 - A Steam account with upload rights for the app you are publishing
-- To run a release: the [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0)
 - To build from source: the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+
+Nothing else to run a release: every installer and portable archive carries its own .NET
+runtime.
 
 ## Download
 
-Prebuilt archives for every version are on the
-[releases page](https://github.com/Andrea332/SteamPipe-Studio/releases):
+Every version is on the
+[releases page](https://github.com/Andrea332/SteamPipe-Studio/releases). Pick the file for
+your system:
 
-| Platform | Archive |
-| --- | --- |
-| Windows x64 | `SteamPipeStudio-<version>-win-x64.zip` |
-| macOS, Apple silicon | `SteamPipeStudio-<version>-osx-arm64.tar.gz` |
-| macOS, Intel | `SteamPipeStudio-<version>-osx-x64.tar.gz` |
-| Linux x64 | `SteamPipeStudio-<version>-linux-x64.tar.gz` |
+| Platform | Installer | Portable |
+| --- | --- | --- |
+| Windows x64 | `SteamPipeStudio-win-Setup.exe` | `SteamPipeStudio-win-Portable.zip` |
+| macOS, Apple silicon | `SteamPipeStudio-osx-arm64-Setup.pkg` | `SteamPipeStudio-osx-arm64-Portable.zip` |
+| macOS, Intel | `SteamPipeStudio-osx-x64-Setup.pkg` | `SteamPipeStudio-osx-x64-Portable.zip` |
+| Linux x64 | — | `SteamPipeStudio.AppImage` |
 
-Unpack the archive and start `SteamPipeStudio` (`SteamPipeStudio.exe` on Windows). The
-builds are framework-dependent: 9–12 MB each, and they need the .NET 10 runtime
-installed. macOS and Linux get a `tar.gz` rather than a `zip` on purpose — `zip` has
-nowhere to record a Unix permission bit, so a binary shipped inside one arrives without
-`+x` and will not start.
+The other files in a release — `*.nupkg`, `releases.*.json`, `assets.*.json`, `RELEASES` —
+are what the built-in updater reads; you never need to download them. Each package is
+around 50 MB because it includes the .NET runtime.
+
+- **The Windows installer** installs for your user only, without asking for
+  administrator rights, into `%LocalAppData%\SteamPipeStudio`, with Start-menu and
+  desktop shortcuts. Uninstall it from *Settings → Apps*. Projects and saved passwords
+  live in `%AppData%\SteamPipeStudio` and survive an uninstall.
+- **The Windows portable archive** runs from wherever you unzip it — start
+  `SteamPipe Studio.exe`. It keeps projects and settings in a `data` folder next to
+  itself, so the whole folder can live on a USB stick. The first time it starts, it copies
+  in the projects already on this machine. It does not copy saved passwords or the API
+  key: enter them again in the portable copy.
+- **On macOS**, the `.pkg` installs the app and the portable zip contains the `.app`
+  itself. **On Linux**, the AppImage is the program: `chmod +x SteamPipeStudio.AppImage`,
+  then run it.
+- **Updates** come from this page. When a newer version is published, installed and
+  portable copies offer it in the status bar and under *Settings → Updates*, where the
+  check at startup can also be turned off. Versions up to 1.2.0 were plain archives with
+  no updater: to get updates from one of those, install the new version once.
+- **Not code-signed yet.** The first time, Windows SmartScreen shows "Windows protected
+  your PC": choose *More info → Run anyway*. macOS refuses software from an unidentified
+  developer: Control-click the package or the app and choose *Open*, or allow it under
+  *System Settings → Privacy & Security*.
 
 Whether you downloaded a release or built it yourself, the first thing to do is open
 **Settings** and point *Steamworks SDK* at your `sdk/tools/ContentBuilder` folder. When
@@ -116,7 +142,7 @@ dotnet publish src/SteamPipeStudio.App -c Release -r win-x64 \
 Skia and HarfBuzz libraries for every platform ship inside the Avalonia packages, so a
 Windows machine produces the macOS and Linux builds without a Mac or a Linux box being
 involved. Use `--self-contained true` for a build that does not need .NET installed, at
-the cost of roughly 70 MB.
+the cost of roughly 100 MB.
 
 `build-scripts/build.sh` and `build-scripts/build.bat` publish all four in one go, after
 checking that what is installed is the SDK and not just the runtime. Output lands in
@@ -124,13 +150,31 @@ checking that what is installed is the SDK and not just the runtime. Output land
 has no execute bit on the macOS and Linux binaries — NTFS cannot store one — so package
 those with `tar`, or `chmod +x` after transferring.
 
+A copy built this way, or started with `dotnet run`, cannot update itself: the updater
+only works in a copy that came from the installer or a portable archive, and says so under
+*Settings → Updates*. Those are made by [Velopack](https://velopack.io) in the release
+workflow, and the Windows ones can be made locally too:
+
+```bash
+dotnet tool install --global vpk --version 1.2.161
+dotnet publish src/SteamPipeStudio.App -c Release -r win-x64 --self-contained true \
+  -p:Version=1.3.0 -o publish
+vpk pack --packId SteamPipeStudio --packVersion 1.3.0 --packTitle "SteamPipe Studio" \
+  --packDir publish --mainExe SteamPipeStudio.exe --runtime win-x64 --channel win \
+  --icon src/SteamPipeStudio.App/Assets/icon.ico --outputDir releases
+```
+
+Pack two versions into the same `releases` folder, unzip the older one's portable archive,
+and start it with `STEAMPIPESTUDIO_UPDATE_FEED` set to that folder: it offers the newer
+one and updates itself from there, exactly as it would from GitHub.
+
 ## Tests
 
 ```bash
 dotnet run --project src/SteamPipeStudio.Tests
 ```
 
-194 assertions over the whole Core library, exiting non-zero on failure. No test
+202 assertions over the whole Core library, exiting non-zero on failure. No test
 framework and no packages: the suite runs on a locked-down build agent that cannot
 restore from NuGet, which is exactly where you want a build pipeline to still work.
 
@@ -148,7 +192,7 @@ src/SteamPipeStudio.Core/     no UI dependencies, no NuGet packages at all
 src/SteamPipeStudio.App/      Avalonia 11, MVVM, the only project with packages
 src/SteamPipeStudio.Tests/    zero-dependency test harness
 build-scripts/                publish all four platforms from any host
-.github/workflows/            release.yml — tag, test, publish, draft release
+.github/workflows/            release.yml — tag, test, package with Velopack, draft release
 ```
 
 `TargetFramework` and `$(AvaloniaVersion)` live in `Directory.Build.props` at the root,
@@ -225,6 +269,14 @@ no percent sign, and `Success! App 'x' fully installed.` is the only line truste
 the files are all there; `Error! App 'x' state is 0x202 after update job.` is translated
 into the disk-space problem it almost always is, rather than shown as a hex number.
 
+**An update ends the process without closing the window.** Velopack's
+`ApplyUpdatesAndRestart` hands over to its updater and exits on the spot, so the window's
+`Closing` handler — where everything typed is normally autosaved — never runs. The app
+saves first and only then restarts, and refuses to start while `steamcmd` is running,
+since that would kill an upload with a depot half committed. A portable copy keeps its
+data next to Velopack's own files rather than next to the executable: the folder holding
+the executable is replaced wholesale on every update.
+
 ## Known limits
 
 Two things cannot be verified without a real publisher account, and are the first places
@@ -243,25 +295,40 @@ to look if something misbehaves:
   than binding to a fixed schema, so a reshaped response degrades to missing columns
   rather than an exception.
 
+The installers are not code-signed, and the macOS packages — built by the release workflow
+on a Mac runner — have not been tried on a real Mac yet. The Windows installer, the
+portable archive and an update from one version to the next have been run end to end.
+
 Not built yet: per-depot platform gating (`[$WIN32]` conditionals survive an import but
 are not editable), drag-and-drop onto the content-root field, diffing a build against the
-previous one, and macOS notarisation through the SDK's `ContentPrep.app`.
+previous one, code signing on Windows, and signing and notarisation on macOS.
 
 ## Releasing
 
 A release is cut by pushing a tag, and only by pushing a tag:
 
 ```bash
-git tag v1.2.0
-git push origin v1.2.0
+git tag v1.3.0
+git push origin v1.3.0
 ```
 
-`.github/workflows/release.yml` runs the test suite, publishes the four runtime
-identifiers with the tag's version stamped into the assembly and no `.pdb` files in the
-archives, packages them — `zip` for Windows, `tar.gz` with the execute bit set for the
-rest — and opens a **draft** release with notes generated from the commits since the
-previous tag. A red suite stops the run before a single asset is uploaded; publishing the
-draft stays a deliberate human click, after reading the notes.
+`.github/workflows/release.yml` first runs the test suite and opens a **draft** release
+with notes generated from the commits since the previous tag; a red suite stops the run
+before a single asset is uploaded. Then four jobs — Windows and Linux on Ubuntu, both
+macOS architectures on a Mac — each publish a self-contained build with the tag's version
+stamped into it, package it with Velopack into the installer, the portable archive and
+the update packages, and add those to the draft. Each job fetches the previous release's
+package first, so the update it uploads is a delta. One platform failing does not stop the
+others; it shows up as a platform missing from the draft.
+
+Publishing the draft stays a deliberate human click, after reading the notes — and it is
+also the moment every installed copy starts offering the update, because the updater
+never sees drafts. To try a release before that click, download its files from the draft
+into a folder and start an older installed or portable copy with
+`STEAMPIPESTUDIO_UPDATE_FEED` pointing at that folder.
+
+To re-run one platform's failed job, delete that platform's `releases.<channel>.json` from
+the draft first: the upload refuses to add a channel the draft already has.
 
 ## Contributing
 
@@ -309,6 +376,11 @@ distribute a modified version, you must release its source under the same licens
 that everyone who receives your version keeps the same freedoms. That is a deliberate
 choice: improvements to a shipping tool should stay available to the people shipping
 with it.
+
+The releases also carry the .NET runtime, Avalonia, SkiaSharp, HarfBuzzSharp and Velopack,
+all under the MIT license, and the Inter typeface under the SIL Open Font License; their
+notices are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), which ships next to the
+executable together with the GPL.
 
 ```
 Copyright (C) 2026  Andrea Galet

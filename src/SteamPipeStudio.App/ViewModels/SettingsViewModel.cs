@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Styling;
@@ -27,8 +28,6 @@ public sealed class SettingsViewModel : ViewModelBase
         _secrets = secrets;
         _pickFolder = pickFolder;
 
-        HasStoredApiKey = !string.IsNullOrEmpty(secrets.Read(SecretStoreFactory.PublisherApiKey));
-
         BrowseContentBuilderCommand = new AsyncRelayCommand(async () =>
         {
             var picked = await _pickFolder("Select the SDK's tools/ContentBuilder folder");
@@ -56,11 +55,8 @@ public sealed class SettingsViewModel : ViewModelBase
         get => _settings.ContentBuilderPath;
         set
         {
-            if (_settings.ContentBuilderPath == value) return;
-            _settings.ContentBuilderPath = value ?? string.Empty;
-            _store.SaveSettings(_settings);
-            OnPropertyChanged();
-            ValidateContentBuilder();
+            if (SetSetting(_settings.ContentBuilderPath, value ?? string.Empty, v => _settings.ContentBuilderPath = v))
+                ValidateContentBuilder();
         }
     }
 
@@ -69,12 +65,8 @@ public sealed class SettingsViewModel : ViewModelBase
         get => _settings.DarkTheme;
         set
         {
-            if (_settings.DarkTheme == value) return;
-            _settings.DarkTheme = value;
-            _store.SaveSettings(_settings);
-            OnPropertyChanged();
-
-            if (Application.Current is { } app)
+            if (SetSetting(_settings.DarkTheme, value, v => _settings.DarkTheme = v) &&
+                Application.Current is { } app)
                 app.RequestedThemeVariant = value ? ThemeVariant.Dark : ThemeVariant.Light;
         }
     }
@@ -82,13 +74,7 @@ public sealed class SettingsViewModel : ViewModelBase
     public bool ConfirmSetLive
     {
         get => _settings.ConfirmSetLive;
-        set
-        {
-            if (_settings.ConfirmSetLive == value) return;
-            _settings.ConfirmSetLive = value;
-            _store.SaveSettings(_settings);
-            OnPropertyChanged();
-        }
+        set => SetSetting(_settings.ConfirmSetLive, value, v => _settings.ConfirmSetLive = v);
     }
 
     public string ApiKeyInput
@@ -96,8 +82,6 @@ public sealed class SettingsViewModel : ViewModelBase
         get => _apiKeyInput;
         set => SetProperty(ref _apiKeyInput, value);
     }
-
-    public bool HasStoredApiKey { get; private set; }
 
     public string Status { get => _status; private set => SetProperty(ref _status, value); }
 
@@ -125,17 +109,21 @@ public sealed class SettingsViewModel : ViewModelBase
 
         _secrets.Write(SecretStoreFactory.PublisherApiKey, key);
         ApiKeyInput = string.Empty;
-        HasStoredApiKey = true;
-        OnPropertyChanged(nameof(HasStoredApiKey));
         Status = "Publisher key saved.";
     }
 
     private void ClearApiKey()
     {
         _secrets.Delete(SecretStoreFactory.PublisherApiKey);
-        HasStoredApiKey = false;
-        OnPropertyChanged(nameof(HasStoredApiKey));
         Status = "Publisher key removed.";
+    }
+
+    /// <summary>Settings are saved the moment they change: there is no Save button to forget.</summary>
+    private bool SetSetting<T>(T current, T value, Action<T> assign, [CallerMemberName] string? propertyName = null)
+    {
+        if (!SetModel(current, value, assign, propertyName)) return false;
+        _store.SaveSettings(_settings);
+        return true;
     }
 
     private void ValidateContentBuilder()

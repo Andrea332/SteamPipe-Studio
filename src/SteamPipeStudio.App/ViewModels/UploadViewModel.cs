@@ -43,20 +43,20 @@ public sealed class ValidationIssueViewModel
 {
     public ValidationIssueViewModel(ValidationIssue issue)
     {
-        Severity = issue.Severity.ToString();
+        Severity = issue.Severity;
         Field = issue.Field;
         Message = issue.Message;
     }
 
-    public string Severity { get; }
+    public IssueSeverity Severity { get; }
     public string Field { get; }
     public string Message { get; }
 
     // Avalonia styles a control from boolean class bindings (Classes.foo="{Binding Bar}"),
-    // so severity is exposed as three flags rather than one string.
-    public bool IsError => Severity == nameof(IssueSeverity.Error);
-    public bool IsWarning => Severity == nameof(IssueSeverity.Warning);
-    public bool IsInfo => Severity == nameof(IssueSeverity.Info);
+    // so severity is exposed as three flags as well.
+    public bool IsError => Severity == IssueSeverity.Error;
+    public bool IsWarning => Severity == IssueSeverity.Warning;
+    public bool IsInfo => Severity == IssueSeverity.Info;
 }
 
 /// <summary>Drives the Upload tab: validate, preview, run, cancel.</summary>
@@ -80,8 +80,8 @@ public sealed class UploadViewModel : ViewModelBase
     private string _preflightSummary = string.Empty;
     private string? _lastLogPath;
 
-    /// <summary>Where a running download's progress is mirrored to, while it runs.</summary>
-    private Action<RunProgress>? _downloadProgress;
+    /// <summary>Where a run started from another tab mirrors its progress, while it runs.</summary>
+    private Action<RunProgress>? _progressListener;
 
     /// <summary>
     /// The stretch of work the bar is currently measuring ("Uploading depot 481"), and
@@ -207,40 +207,19 @@ public sealed class UploadViewModel : ViewModelBase
         var settings = _settings();
 
         RefreshIssues(profile);
-        if (Issues.Any(i => i.Severity == nameof(IssueSeverity.Error)))
+        if (Issues.Any(i => i.IsError))
         {
             Status = "Upload blocked — fix the errors listed above.";
             return;
         }
-
-        _cancellation = new CancellationTokenSource();
-        IsRunning = true;
-        Progress = 0;
-        IsIndeterminate = true;
-        Phase = "Starting steamcmd…";
-        _phaseLabel = string.Empty;
-        _currentDepot = null;
-        Status = profile.Preview ? "Running preview build (nothing is uploaded)…" : "Uploading…";
-        Append($"--- {DateTime.Now:HH:mm:ss} starting build for AppID {profile.AppId} ---",
-               SteamCmdEventKind.Bootstrap);
-
-        // The saved password, when there is one, is handed to steamcmd instead of opening
-        // the dialog. The decorator is built per upload because it is scoped to one
-        // account and remembers whether the stored value has already been tried.
-        var credentials = new StoredPasswordPrompt(_prompt, _secrets, profile.SteamAccountName);
-        credentials.StoredPasswordRejected += () => Dispatcher.UIThread.Post(() =>
-            Append($"The saved password for {profile.SteamAccountName} was not accepted — asking.",
-                   SteamCmdEventKind.SteamGuardPrompt));
-
-        var session = new SteamCmdSession(credentials);
-        session.Output += OnSteamCmdEvent;
-
         try
         {
-            var scriptDirectory = Path.Combine(profile.BuildOutput, "scripts");
-
-            var outcome = await session
-                .UploadAsync(profile, settings, scriptDirectory, _cancellation.Token)
+            var outcome = await RunSteamCmdAsync(profile,
+                    profile.Preview ? "Running preview build (nothing is uploaded)…" : "Uploading…",
+                    $"starting build for AppID {profile.AppId}",
+                    onProgress: null,
+                    (session, cancellation) => session.UploadAsync(
+                        profile, settings, Path.Combine(profile.BuildOutput, "scripts"), cancellation))
                 .ConfigureAwait(true);
 
             _lastLogPath = outcome.BuildLogPath;
@@ -266,60 +245,26 @@ public sealed class UploadViewModel : ViewModelBase
         }
         catch (OperationCanceledException)
         {
-            Status = "Cancelled.";
-            Append("--- cancelled by user ---", SteamCmdEventKind.Error);
-        }
-        finally
-        {
-            session.Output -= OnSteamCmdEvent;
-            _cancellation?.Dispose();
-            _cancellation = null;
-            IsRunning = false;
-            IsIndeterminate = false;
-            Phase = string.Empty;
+            Cancelled();
         }
     }
 
     /// <summary>
     /// Runs a download started from the Builds tab through this panel, so that its log,
     /// progress bar, Cancel button and credential prompts are the same ones an upload
-    /// uses. steamcmd is a shared resource — one builder folder, one console log — so a
-    /// download and an upload cannot overlap, and <see cref="IsRunning"/> is the one gate
-    /// for both. <paramref name="onProgress"/> receives the phase and percentage as they
+    /// uses. <paramref name="onProgress"/> receives the phase and percentage as they
     /// change, so the tab the user clicked in can draw its own bar without the log panel.
     /// </summary>
     public async Task<DownloadOutcome> DownloadAsync(BuildProfile profile, DownloadRequest request,
                                                      Action<RunProgress>? onProgress = null)
     {
-        if (IsRunning)
-            throw new InvalidOperationException(
-                "steamcmd is already running. Wait for it to finish, or cancel it on the Upload tab.");
-
-        _cancellation = new CancellationTokenSource();
-        IsRunning = true;
-        Progress = 0;
-        IsIndeterminate = true;
-        Phase = "Starting steamcmd…";
-        _phaseLabel = string.Empty;
-        _currentDepot = null;
-        Status = $"Downloading AppID {profile.AppId} from '{request.Branch}'…";
-        _downloadProgress = onProgress;
-        onProgress?.Invoke(new RunProgress(Phase, null));
-        Append($"--- {DateTime.Now:HH:mm:ss} downloading AppID {profile.AppId}, branch '{request.Branch}', " +
-               $"into {request.InstallDirectory} ---", SteamCmdEventKind.Bootstrap);
-
-        var credentials = new StoredPasswordPrompt(_prompt, _secrets, profile.SteamAccountName);
-        credentials.StoredPasswordRejected += () => Dispatcher.UIThread.Post(() =>
-            Append($"The saved password for {profile.SteamAccountName} was not accepted — asking.",
-                   SteamCmdEventKind.SteamGuardPrompt));
-
-        var session = new SteamCmdSession(credentials);
-        session.Output += OnSteamCmdEvent;
-
         try
         {
-            var outcome = await session
-                .DownloadAsync(profile, _settings(), request, _cancellation.Token)
+            var outcome = await RunSteamCmdAsync(profile,
+                    $"Downloading AppID {profile.AppId} from '{request.Branch}'…",
+                    $"downloading AppID {profile.AppId}, branch '{request.Branch}', into {request.InstallDirectory}",
+                    onProgress,
+                    (session, cancellation) => session.DownloadAsync(profile, _settings(), request, cancellation))
                 .ConfigureAwait(true);
 
             if (outcome.Succeeded)
@@ -338,8 +283,7 @@ public sealed class UploadViewModel : ViewModelBase
         }
         catch (OperationCanceledException)
         {
-            Status = "Cancelled.";
-            Append("--- cancelled by user ---", SteamCmdEventKind.Error);
+            Cancelled();
             return new DownloadOutcome(false, "Cancelled.", request.InstallDirectory);
         }
         catch (Exception e) when (e is InvalidOperationException or IOException
@@ -352,16 +296,68 @@ public sealed class UploadViewModel : ViewModelBase
             Fail(e.Message);
             return new DownloadOutcome(false, e.Message, request.InstallDirectory);
         }
+    }
+
+    /// <summary>
+    /// What every steamcmd run from this panel has in common: one run at a time, the
+    /// progress state reset, a banner in the log, the saved-password decorator, the log
+    /// wired to the session, and all of it put back however the run ends.
+    ///
+    /// One run at a time is not a UI nicety. Upload and download share one builder
+    /// folder and one console log, so <see cref="IsRunning"/> is the gate for both, and
+    /// the Builds tab's Download buttons watch it too.
+    /// </summary>
+    private async Task<T> RunSteamCmdAsync<T>(
+        BuildProfile profile, string status, string banner, Action<RunProgress>? onProgress,
+        Func<SteamCmdSession, CancellationToken, Task<T>> run)
+    {
+        if (IsRunning)
+            throw new InvalidOperationException(
+                "steamcmd is already running. Wait for it to finish, or cancel it on the Upload tab.");
+
+        _cancellation = new CancellationTokenSource();
+        IsRunning = true;
+        Progress = 0;
+        IsIndeterminate = true;
+        Phase = "Starting steamcmd…";
+        _phaseLabel = string.Empty;
+        _currentDepot = null;
+        Status = status;
+        _progressListener = onProgress;
+        onProgress?.Invoke(new RunProgress(Phase, null));
+        Append($"--- {DateTime.Now:HH:mm:ss} {banner} ---", SteamCmdEventKind.Bootstrap);
+
+        // The saved password, when there is one, is handed to steamcmd instead of opening
+        // the dialog. The decorator is built per run because it is scoped to one account
+        // and remembers whether the stored value has already been tried.
+        var credentials = new StoredPasswordPrompt(_prompt, _secrets, profile.SteamAccountName);
+        credentials.StoredPasswordRejected += () => Dispatcher.UIThread.Post(() =>
+            Append($"The saved password for {profile.SteamAccountName} was not accepted — asking.",
+                   SteamCmdEventKind.SteamGuardPrompt));
+
+        var session = new SteamCmdSession(credentials);
+        session.Output += OnSteamCmdEvent;
+
+        try
+        {
+            return await run(session, _cancellation.Token).ConfigureAwait(true);
+        }
         finally
         {
             session.Output -= OnSteamCmdEvent;
-            _downloadProgress = null;
+            _progressListener = null;
             _cancellation?.Dispose();
             _cancellation = null;
             IsRunning = false;
             IsIndeterminate = false;
             Phase = string.Empty;
         }
+    }
+
+    private void Cancelled()
+    {
+        Status = "Cancelled.";
+        Append("--- cancelled by user ---", SteamCmdEventKind.Error);
     }
 
     private void Cancel()
@@ -429,7 +425,7 @@ public sealed class UploadViewModel : ViewModelBase
 
             // A download started from the Builds tab draws its own bar from the same
             // numbers; cheap enough to do per line, and it keeps the two tabs in step.
-            _downloadProgress?.Invoke(new RunProgress(Phase, IsIndeterminate ? null : Progress));
+            _progressListener?.Invoke(new RunProgress(Phase, IsIndeterminate ? null : Progress));
         });
     }
 
@@ -541,5 +537,4 @@ public sealed class DepotPreflightViewModel
     public string Summary { get; }
     public IReadOnlyList<string> Notes { get; }
     public IReadOnlyList<string> LargestFiles { get; }
-    public bool HasNotes => Notes.Count > 0;
 }

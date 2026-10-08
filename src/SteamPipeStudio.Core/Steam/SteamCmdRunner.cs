@@ -658,15 +658,20 @@ public sealed class SteamCmdRunner
         if (evt.Kind is not (SteamCmdEventKind.SteamGuardPrompt or SteamCmdEventKind.LoginPrompt))
             state.AnsweredPrompt = null;
 
-        await MaybeAnswerPromptAsync(line, process, state, cancellation).ConfigureAwait(false);
+        await MaybeAnswerPromptAsync(line, evt, process, state, cancellation).ConfigureAwait(false);
     }
 
-    private async Task MaybeAnswerPromptAsync(string line, Process process, RunState state,
-                                              CancellationToken cancellation)
+    /// <summary>For an unterminated tail, which has not been through the parser yet.</summary>
+    private Task MaybeAnswerPromptAsync(string line, Process process, RunState state,
+                                        CancellationToken cancellation) =>
+        _prompt is null
+            ? Task.CompletedTask
+            : MaybeAnswerPromptAsync(line, SteamCmdOutputParser.Parse(line), process, state, cancellation);
+
+    private async Task MaybeAnswerPromptAsync(string line, SteamCmdEvent evt, Process process,
+                                              RunState state, CancellationToken cancellation)
     {
         if (_prompt is null) return;
-
-        var evt = SteamCmdOutputParser.Parse(line);
         if (evt.Kind is not (SteamCmdEventKind.SteamGuardPrompt or SteamCmdEventKind.LoginPrompt)) return;
 
         // A password prompt that arrives as text after the watchdog already answered one

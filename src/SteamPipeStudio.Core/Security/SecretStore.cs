@@ -310,6 +310,10 @@ internal sealed class LinuxSecretStore : ISecretStore
 
     // ---- AES-GCM fallback ----
 
+    // PBKDF2 at 100 000 iterations is deliberately slow, and the inputs never change
+    // while the process runs, so it is paid once rather than on every read.
+    private static readonly Lazy<byte[]> Key = new(DeriveKey);
+
     private static byte[] DeriveKey()
     {
         var machineId = ReadFirstLine("/etc/machine-id")
@@ -337,7 +341,7 @@ internal sealed class LinuxSecretStore : ISecretStore
 
     private static byte[] Encrypt(string plaintext)
     {
-        var key = DeriveKey();
+        var key = Key.Value;
         var nonce = RandomNumberGenerator.GetBytes(AesGcm.NonceByteSizes.MaxSize);
         var plainBytes = Encoding.UTF8.GetBytes(plaintext);
         var cipher = new byte[plainBytes.Length];
@@ -366,7 +370,7 @@ internal sealed class LinuxSecretStore : ISecretStore
         var cipher = payload.AsSpan(nonceLength + tagLength);
         var plain = new byte[cipher.Length];
 
-        using var aes = new AesGcm(DeriveKey(), tagLength);
+        using var aes = new AesGcm(Key.Value, tagLength);
         aes.Decrypt(nonce, cipher, tag, plain);
         return Encoding.UTF8.GetString(plain);
     }

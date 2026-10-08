@@ -17,11 +17,20 @@ public sealed class AppSettings
 
     public bool DarkTheme { get; set; } = true;
 
-    /// <summary>Ask for confirmation before setting a build live on the default branch.</summary>
+    /// <summary>
+    /// Ask before setting a build live on a beta branch. The default branch always asks,
+    /// whatever this says: it changes what every player downloads.
+    /// </summary>
     public bool ConfirmSetLive { get; set; } = true;
 
     /// <summary>How many build-history rows to request from the partner Web API.</summary>
     public int BuildHistoryCount { get; set; } = 20;
+
+    /// <summary>
+    /// Look for a newer release on GitHub when the app starts. Only ever offers it: the
+    /// update is installed when the user says so, never in the middle of an upload.
+    /// </summary>
+    public bool CheckForUpdatesAtStartup { get; set; } = true;
 }
 
 /// <summary>
@@ -57,6 +66,34 @@ public sealed class ProfileStore
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData,
             Environment.SpecialFolderOption.Create),
         "SteamPipeStudio");
+
+    /// <summary>
+    /// The store of a portable copy, kept in <paramref name="directory"/> inside the
+    /// copy's own folder so projects travel with it.
+    ///
+    /// The first time, it starts from the projects and settings already on this machine
+    /// in <paramref name="seedFrom"/> (the normal location, by default): switching to the
+    /// portable build should not look like losing every project. Only the first time —
+    /// a project deleted from the portable copy must stay deleted. Secrets are not
+    /// copied: a portable folder ends up on USB sticks and shared drives, and the API key
+    /// and passwords are better typed again than carried along unasked.
+    /// </summary>
+    public static ProfileStore OpenPortable(string directory, string? seedFrom = null)
+    {
+        var firstRun = !Directory.Exists(directory);
+        var store = new ProfileStore(directory);
+
+        seedFrom ??= DefaultRoot();
+        if (!firstRun || !Directory.Exists(seedFrom)) return store;
+
+        var source = new ProfileStore(seedFrom);
+        if (File.Exists(source.SettingsPath)) File.Copy(source.SettingsPath, store.SettingsPath);
+
+        foreach (var profile in Directory.EnumerateFiles(source.ProfilesDirectory, "*.json"))
+            File.Copy(profile, Path.Combine(store.ProfilesDirectory, Path.GetFileName(profile)));
+
+        return store;
+    }
 
     public AppSettings LoadSettings()
     {

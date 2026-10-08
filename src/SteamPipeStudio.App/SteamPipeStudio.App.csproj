@@ -7,7 +7,10 @@
     <OutputType>WinExe</OutputType>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Bindings are compiled against the x:DataType declared in the XAML: a mistyped
+         property name is a build error instead of a binding that silently shows nothing,
+         and no reflection runs when a value changes. -->
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <AssemblyName>SteamPipeStudio</AssemblyName>
     <RootNamespace>SteamPipeStudio.App</RootNamespace>
     <!-- Cross-platform publish targets. -->
@@ -24,8 +27,10 @@
     <PackageReference Include="Avalonia.Desktop" Version="$(AvaloniaVersion)" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="$(AvaloniaVersion)" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="$(AvaloniaVersion)" />
-    <PackageReference Include="Avalonia.Diagnostics" Version="$(AvaloniaVersion)"
-                      Condition="'$(Configuration)' == 'Debug'" />
+    <!-- Installer, portable build and self-update from GitHub Releases. No transitive
+         packages on net10.0. Keep it in step with the vpk tool version in release.yml:
+         the app and the packer agree on the package format. -->
+    <PackageReference Include="Velopack" Version="1.2.161" />
   </ItemGroup>
 
   <ItemGroup>
@@ -34,6 +39,14 @@
          bar. icon.svg is the editable master and icon-*.png are for Linux desktop entries
          and the README; neither belongs inside the binary. -->
     <AvaloniaResource Include="Assets\icon.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Shipped next to the executable: the GPL asks for the license to travel with the
+         program, and the bundled runtime, Avalonia, Skia, Velopack and the Inter font each
+         ask for their own notice. -->
+    <None Include="..\..\LICENSE" Link="LICENSE.txt" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

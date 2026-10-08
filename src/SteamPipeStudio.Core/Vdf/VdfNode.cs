@@ -67,10 +67,6 @@ public sealed class VdfNode
         return block;
     }
 
-    public bool Remove(VdfNode child) => _children.Remove(child);
-
-    public void Clear() => _children.Clear();
-
     // ---- lookup helpers (all case-insensitive, matching Valve's parser) ----
 
     public VdfNode? Find(string key) =>
@@ -100,20 +96,6 @@ public sealed class VdfNode
 
     public uint GetUInt(string key, uint fallback = 0) =>
         uint.TryParse(GetString(key), out var v) ? v : fallback;
-
-    /// <summary>Sets a scalar child, replacing the first existing one with that key.</summary>
-    public void SetString(string key, string value)
-    {
-        var existing = Find(key);
-        if (existing is { IsBlock: false })
-        {
-            existing.Value = value;
-            return;
-        }
-        Add(key, value);
-    }
-
-    public void SetBool(string key, bool value) => SetString(key, value ? "1" : "0");
 
     public override string ToString() => IsBlock ? $"{Key} {{ {_children.Count} }}" : $"{Key} = {Value}";
 }

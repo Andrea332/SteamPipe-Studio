@@ -78,3 +78,6 @@ desktop.ini
 # roughly 42 MB per release, and GitHub stores release assets outside the git
 # object database precisely so a clone does not have to carry every past build.
 dist/
+
+# Worktrees Claude Code creates for background tasks: separate checkouts, never content.
+.claude/worktrees/

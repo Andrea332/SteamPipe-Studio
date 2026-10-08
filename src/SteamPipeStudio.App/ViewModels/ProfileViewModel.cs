@@ -4,6 +4,8 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using Avalonia.Threading;
 using SteamPipeStudio.Core.Model;
 using SteamPipeStudio.Core.Security;
 
@@ -34,19 +36,19 @@ public sealed class FileMappingViewModel : ViewModelBase
     public string LocalPath
     {
         get => _model.LocalPath;
-        set { if (_model.LocalPath != value) { _model.LocalPath = value; OnPropertyChanged(); } }
+        set => SetModel(_model.LocalPath, value, v => _model.LocalPath = v);
     }
 
     public string DepotPath
     {
         get => _model.DepotPath;
-        set { if (_model.DepotPath != value) { _model.DepotPath = value; OnPropertyChanged(); } }
+        set => SetModel(_model.DepotPath, value, v => _model.DepotPath = v);
     }
 
     public bool Recursive
     {
         get => _model.Recursive;
-        set { if (_model.Recursive != value) { _model.Recursive = value; OnPropertyChanged(); } }
+        set => SetModel(_model.Recursive, value, v => _model.Recursive = v);
     }
 }
 
@@ -141,10 +143,8 @@ public sealed class DepotViewModel : ViewModelBase
         {
             // Accept an empty box while typing rather than snapping back to 0.
             var parsed = uint.TryParse(value?.Trim(), out var id) ? id : 0u;
-            if (_model.DepotId == parsed) return;
-            _model.DepotId = parsed;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(Header));
+            if (SetModel(_model.DepotId, parsed, v => _model.DepotId = v))
+                OnPropertyChanged(nameof(Header));
         }
     }
 
@@ -153,29 +153,27 @@ public sealed class DepotViewModel : ViewModelBase
         get => _model.Label;
         set
         {
-            if (_model.Label == value) return;
-            _model.Label = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(Header));
+            if (SetModel(_model.Label, value, v => _model.Label = v))
+                OnPropertyChanged(nameof(Header));
         }
     }
 
     public string ContentRootOverride
     {
         get => _model.ContentRootOverride;
-        set { if (_model.ContentRootOverride != value) { _model.ContentRootOverride = value; OnPropertyChanged(); } }
+        set => SetModel(_model.ContentRootOverride, value, v => _model.ContentRootOverride = v);
     }
 
     public string InstallScript
     {
         get => _model.InstallScript;
-        set { if (_model.InstallScript != value) { _model.InstallScript = value; OnPropertyChanged(); } }
+        set => SetModel(_model.InstallScript, value, v => _model.InstallScript = v);
     }
 
     public bool Enabled
     {
         get => _model.Enabled;
-        set { if (_model.Enabled != value) { _model.Enabled = value; OnPropertyChanged(); } }
+        set => SetModel(_model.Enabled, value, v => _model.Enabled = v);
     }
 
     public string Header => string.IsNullOrWhiteSpace(Label)
@@ -202,12 +200,17 @@ public sealed class DepotViewModel : ViewModelBase
 /// </summary>
 public sealed class ProfileViewModel : ViewModelBase
 {
+    /// <summary>How long the account field has to stay still before the secret store is asked about it.</summary>
+    private static readonly TimeSpan PasswordLookupDelay = TimeSpan.FromMilliseconds(400);
+
     private readonly BuildProfile _model;
     private readonly ISecretStore _secrets;
     private readonly List<DepotViewModel> _subscribedDepots = new();
     private bool _isDirty;
     private string _passwordInput = string.Empty;
     private string _passwordStatus = string.Empty;
+    private bool? _hasStoredPassword;
+    private IDisposable? _pendingPasswordLookup;
 
     public ProfileViewModel(BuildProfile model, ISecretStore secrets)
     {
@@ -255,38 +258,31 @@ public sealed class ProfileViewModel : ViewModelBase
     public string Name
     {
         get => _model.Name;
-        set => Set(v => _model.Name = v, _model.Name, value);
+        set => Set(_model.Name, value, v => _model.Name = v);
     }
 
     public string AppIdText
     {
         get => _model.AppId == 0 ? string.Empty : _model.AppId.ToString();
-        set
-        {
-            var parsed = uint.TryParse(value?.Trim(), out var id) ? id : 0u;
-            if (_model.AppId == parsed) return;
-            _model.AppId = parsed;
-            IsDirty = true;
-            OnPropertyChanged();
-        }
+        set => Set(_model.AppId, uint.TryParse(value?.Trim(), out var id) ? id : 0u, v => _model.AppId = v);
     }
 
     public string Description
     {
         get => _model.Description;
-        set => Set(v => _model.Description = v, _model.Description, value);
+        set => Set(_model.Description, value, v => _model.Description = v);
     }
 
     public string ContentRoot
     {
         get => _model.ContentRoot;
-        set => Set(v => _model.ContentRoot = v, _model.ContentRoot, value);
+        set => Set(_model.ContentRoot, value, v => _model.ContentRoot = v);
     }
 
     public string BuildOutput
     {
         get => _model.BuildOutput;
-        set => Set(v => _model.BuildOutput = v, _model.BuildOutput, value);
+        set => Set(_model.BuildOutput, value, v => _model.BuildOutput = v);
     }
 
     public string SteamAccountName
@@ -294,14 +290,15 @@ public sealed class ProfileViewModel : ViewModelBase
         get => _model.SteamAccountName;
         set
         {
-            Set(v => _model.SteamAccountName = v, _model.SteamAccountName, value);
+            if (!Set(_model.SteamAccountName, value, v => _model.SteamAccountName = v)) return;
 
-            // The password is filed under the account name, so retyping the account has
-            // to re-answer "is one saved?" — otherwise the card claims a password is
-            // stored for an account that has none.
-            OnPropertyChanged(nameof(HasStoredPassword));
-            OnPropertyChanged(nameof(PasswordSummary));
-            ClearPasswordCommand.RaiseCanExecuteChanged();
+            // The password is filed under the account name, so a different account needs
+            // a fresh answer to "is one saved?" — otherwise the card claims a password is
+            // stored for an account that has none. Asked once the typing stops rather than
+            // on every keystroke: on macOS and Linux each question to the secret store
+            // starts a process, on the UI thread.
+            _pendingPasswordLookup?.Dispose();
+            _pendingPasswordLookup = DispatcherTimer.RunOnce(() => SetStoredPassword(null), PasswordLookupDelay);
         }
     }
 
@@ -330,13 +327,26 @@ public sealed class ProfileViewModel : ViewModelBase
         private set => SetProperty(ref _passwordStatus, value);
     }
 
-    public bool HasStoredPassword =>
+    /// <summary>
+    /// Whether a password is saved for the account. Remembered rather than recomputed on
+    /// every read: two bindings and a command read it, and asking the secret store costs a
+    /// DPAPI call on Windows and a process launch on macOS and Linux.
+    /// </summary>
+    public bool HasStoredPassword => _hasStoredPassword ??=
         !string.IsNullOrWhiteSpace(_model.SteamAccountName) &&
         !string.IsNullOrEmpty(_secrets.Read(SecretStoreFactory.SteamPassword(_model.SteamAccountName)));
 
     public string PasswordSummary => HasStoredPassword
         ? "Saved. Uploads sign in without asking; Steam Guard still prompts when the session expires."
         : "Not saved. steamcmd asks the first time and then reuses its own cached session.";
+
+    /// <summary>Records the answer, or forgets it with <c>null</c> so the next read asks the store.</summary>
+    private void SetStoredPassword(bool? known)
+    {
+        _hasStoredPassword = known;
+        RaiseAll(nameof(HasStoredPassword), nameof(PasswordSummary));
+        ClearPasswordCommand.RaiseCanExecuteChanged();
+    }
 
     private void SavePassword()
     {
@@ -347,8 +357,7 @@ public sealed class ProfileViewModel : ViewModelBase
         _secrets.Write(SecretStoreFactory.SteamPassword(account), PasswordInput);
         PasswordInput = string.Empty;
         PasswordStatus = $"Password saved for {account}.";
-        RaiseAll(nameof(HasStoredPassword), nameof(PasswordSummary));
-        ClearPasswordCommand.RaiseCanExecuteChanged();
+        SetStoredPassword(true);
     }
 
     private void ClearPassword()
@@ -359,65 +368,55 @@ public sealed class ProfileViewModel : ViewModelBase
         _secrets.Delete(SecretStoreFactory.SteamPassword(account));
         PasswordInput = string.Empty;
         PasswordStatus = $"Password removed for {account}.";
-        RaiseAll(nameof(HasStoredPassword), nameof(PasswordSummary));
-        ClearPasswordCommand.RaiseCanExecuteChanged();
+        SetStoredPassword(false);
     }
 
     public string SetLiveBranch
     {
         get => _model.SetLiveBranch;
-        set => Set(v => _model.SetLiveBranch = v, _model.SetLiveBranch, value);
+        set => Set(_model.SetLiveBranch, value, v => _model.SetLiveBranch = v);
     }
 
     public string LocalContentServerPath
     {
         get => _model.LocalContentServerPath;
-        set => Set(v => _model.LocalContentServerPath = v, _model.LocalContentServerPath, value);
+        set => Set(_model.LocalContentServerPath, value, v => _model.LocalContentServerPath = v);
     }
 
     public string ContentBuilderPathOverride
     {
         get => _model.ContentBuilderPathOverride;
-        set => Set(v => _model.ContentBuilderPathOverride = v, _model.ContentBuilderPathOverride, value);
+        set => Set(_model.ContentBuilderPathOverride, value, v => _model.ContentBuilderPathOverride = v);
     }
 
     public bool Preview
     {
         get => _model.Preview;
-        set
-        {
-            if (_model.Preview == value) return;
-            _model.Preview = value;
-            IsDirty = true;
-            OnPropertyChanged();
-        }
+        set => Set(_model.Preview, value, v => _model.Preview = v);
     }
 
     public bool Verbose
     {
         get => _model.Verbose;
-        set
-        {
-            if (_model.Verbose == value) return;
-            _model.Verbose = value;
-            IsDirty = true;
-            OnPropertyChanged();
-        }
+        set => Set(_model.Verbose, value, v => _model.Verbose = v);
     }
 
     public string LastBuildSummary => _model.LastBuildId is null
         ? "No build uploaded from this machine yet."
         : $"Last build {_model.LastBuildId} on {_model.LastUploadedUtc?.ToLocalTime():yyyy-MM-dd HH:mm}";
 
-    private void Set(Action<string> assign, string current, string? value,
-                     [System.Runtime.CompilerServices.CallerMemberName] string? propertyName = null)
+    /// <summary><see cref="ViewModelBase.SetModel{T}"/> that also marks the profile dirty.</summary>
+    private bool Set<T>(T current, T value, Action<T> assign, [CallerMemberName] string? propertyName = null)
     {
-        var next = value ?? string.Empty;
-        if (current == next) return;
-        assign(next);
+        if (!SetModel(current, value, assign, propertyName)) return false;
         IsDirty = true;
-        OnPropertyChanged(propertyName);
+        return true;
     }
+
+    // A cleared text box can hand back null; the model never holds one.
+    private bool Set(string current, string? value, Action<string> assign,
+                     [CallerMemberName] string? propertyName = null) =>
+        Set<string>(current, value ?? string.Empty, assign, propertyName);
 
     private void OnDepotsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {

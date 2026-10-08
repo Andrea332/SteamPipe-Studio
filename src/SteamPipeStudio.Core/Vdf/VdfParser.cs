@@ -20,36 +20,34 @@ public sealed class VdfParseException : Exception
 /// <summary>
 /// Recursive-descent parser for Valve KeyValues text.
 ///
-/// Escape sequences are DISABLED by default, and that is deliberate. Valve's own
-/// build scripts contain lines such as:
+/// Escape sequences are NOT processed, and that is deliberate. Valve's own build
+/// scripts contain lines such as:
 ///
 ///     "ContentRoot" "..\content\"
 ///
 /// Under standard escaping the trailing <c>\"</c> would be an escaped quote and the
 /// document would fail to parse. steamcmd reads these files with escape processing
-/// off, so we match that behaviour. Pass <c>allowEscapeSequences: true</c> only when
-/// reading a file that is known to use them.
+/// off, so this parser does the same — a backslash is just a character.
 /// </summary>
 public static class VdfParser
 {
-    public static VdfNode ParseFile(string path, bool allowEscapeSequences = false)
-        => Parse(System.IO.File.ReadAllText(path), allowEscapeSequences);
+    public static VdfNode ParseFile(string path) => Parse(System.IO.File.ReadAllText(path));
 
     /// <summary>
     /// Parses a document and returns its single root node (e.g. <c>AppBuild</c>).
     /// </summary>
-    public static VdfNode Parse(string text, bool allowEscapeSequences = false)
+    public static VdfNode Parse(string text)
     {
-        var roots = ParseAll(text, allowEscapeSequences);
+        var roots = ParseAll(text);
         if (roots.Count == 0)
             throw new VdfParseException("Document is empty", 1, 1);
         return roots[0];
     }
 
     /// <summary>Parses a document that may contain several top-level nodes.</summary>
-    public static List<VdfNode> ParseAll(string text, bool allowEscapeSequences = false)
+    public static List<VdfNode> ParseAll(string text)
     {
-        var lexer = new Lexer(text, allowEscapeSequences);
+        var lexer = new Lexer(text);
         var roots = new List<VdfNode>();
 
         while (true)
@@ -183,18 +181,16 @@ public static class VdfParser
     private sealed class Lexer
     {
         private readonly string _src;
-        private readonly bool _escapes;
         private int _pos;
         private int _line = 1;
         private int _col = 1;
         private Token? _peeked;
 
-        public Lexer(string src, bool escapes)
+        public Lexer(string src)
         {
             // Strip a UTF-8 BOM: some SDK scripts ship with one, and U+FEFF would
             // otherwise be lexed as part of the first key.
             _src = src.Length > 0 && src[0] == '\uFEFF' ? src[1..] : src;
-            _escapes = escapes;
         }
 
         public Token Peek() => _peeked ??= Read();
@@ -259,23 +255,6 @@ public static class VdfParser
                 {
                     Advance();
                     return new Token(TokenKind.String, sb.ToString(), line, col);
-                }
-
-                if (c == '\\' && _escapes && _pos + 1 < _src.Length)
-                {
-                    Advance();
-                    var esc = _src[_pos];
-                    sb.Append(esc switch
-                    {
-                        'n' => '\n',
-                        't' => '\t',
-                        'r' => '\r',
-                        '\\' => '\\',
-                        '"' => '"',
-                        _ => esc
-                    });
-                    Advance();
-                    continue;
                 }
 
                 if (c == '\n')

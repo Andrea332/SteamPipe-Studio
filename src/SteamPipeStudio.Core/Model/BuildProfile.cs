@@ -115,6 +115,12 @@ public sealed class BuildProfile
     /// <summary>Overrides the global ContentBuilder path when set.</summary>
     public string ContentBuilderPathOverride { get; set; } = string.Empty;
 
+    /// <summary>The ContentBuilder folder this project builds with: its own override, or the global one.</summary>
+    public string ContentBuilderPath(AppSettings? settings) =>
+        !string.IsNullOrWhiteSpace(ContentBuilderPathOverride)
+            ? ContentBuilderPathOverride
+            : settings?.ContentBuilderPath ?? string.Empty;
+
     /// <summary>
     /// Beta branch to set live automatically. Empty means "upload only".
     /// Steam refuses to auto-set the default branch live, so <c>public</c> is rejected here.

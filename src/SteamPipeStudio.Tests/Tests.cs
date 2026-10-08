@@ -77,6 +77,7 @@ internal static class Program
         Locator();
         ConsoleLogDeduplication();
         Secrets();
+        PortableStore();
         return Harness.Report();
     }
 
@@ -641,9 +642,15 @@ internal static class Program
             request with { Branch = "public" }, null);
         Harness.Check("default branch has no -beta switch", !publicBranch.Contains("-beta"),
             string.Join(' ', publicBranch));
-        Harness.Check("default branch spelled either way",
-            SteamCmdSession.IsDefaultBranch("PUBLIC") && SteamCmdSession.IsDefaultBranch("") &&
-            !SteamCmdSession.IsDefaultBranch("beta"));
+        // One rule for the whole app. It used to be three, and they disagreed: the build
+        // script accepted "default", the download did not, the Builds tab knew only "public".
+        Harness.Check("default branch spelled any way",
+            SteamBranch.IsDefault("PUBLIC") && SteamBranch.IsDefault(" public ") &&
+            SteamBranch.IsDefault("default") && SteamBranch.IsDefault("") && SteamBranch.IsDefault(null));
+        Harness.Check("a beta branch is not the default", !SteamBranch.IsDefault("beta"));
+        Harness.Check("the download treats \"default\" as the default branch too",
+            !SteamCmdSession.DownloadArguments(480, "someone", request with { Branch = "default" }, null)
+                .Contains("-beta"));
 
         // A branch password travels in a script file, never on the command line, where
         // the process list would show it to every other program on the machine.
@@ -838,6 +845,49 @@ internal static class Program
         Harness.Equal("first repeat claimed", true, repeated.ShouldSuppressPipeLine("."));
         Harness.Equal("second repeat claimed", true, repeated.ShouldSuppressPipeLine("."));
         Harness.Equal("third is a new line", false, repeated.ShouldSuppressPipeLine("."));
+    }
+
+    private static void PortableStore()
+    {
+        Console.WriteLine("== portable store ==");
+
+        var root = Path.Combine(Path.GetTempPath(), "sps-portable-" + Guid.NewGuid().ToString("N"));
+        var machine = Path.Combine(root, "machine");
+        var portable = Path.Combine(root, "portable", "data");
+
+        try
+        {
+            // What an earlier, installed copy left on this machine.
+            var installed = new ProfileStore(machine);
+            installed.SaveSettings(new AppSettings { ContentBuilderPath = "C:/sdk/tools/ContentBuilder" });
+            var project = new BuildProfile { Name = "Existing", AppId = 480 };
+            installed.SaveProfile(project);
+            Directory.CreateDirectory(Path.Combine(machine, "secrets"));
+            File.WriteAllText(Path.Combine(machine, "secrets", "publisher-web-api-key.bin"), "x");
+
+            var first = ProfileStore.OpenPortable(portable, machine);
+            Harness.Equal("portable store lives in its own folder", portable, first.RootDirectory);
+            Harness.Equal("existing projects come along the first time", "Existing",
+                first.LoadProfiles().SingleOrDefault()?.Name);
+            Harness.Equal("existing settings come along the first time", "C:/sdk/tools/ContentBuilder",
+                first.LoadSettings().ContentBuilderPath);
+            Harness.Check("secrets are not copied into a folder that travels",
+                !Directory.Exists(Path.Combine(portable, "secrets")));
+
+            // Only the first time: a project removed from the portable copy stays removed.
+            first.DeleteProfile(first.LoadProfiles().Single());
+            var second = ProfileStore.OpenPortable(portable, machine);
+            Harness.Equal("no second seeding", 0, second.LoadProfiles().Count);
+
+            // Nothing to start from is not an error.
+            var empty = ProfileStore.OpenPortable(Path.Combine(root, "other", "data"),
+                                                  Path.Combine(root, "missing"));
+            Harness.Equal("empty start without an earlier install", 0, empty.LoadProfiles().Count);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
     }
 
     private static void Secrets()

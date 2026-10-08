@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using SteamPipeStudio.Core.Model;
+using SteamPipeStudio.Core.Steam;
 
 namespace SteamPipeStudio.Core.Build;
 
@@ -169,7 +170,7 @@ public static class BuildValidator
     {
         if (string.IsNullOrWhiteSpace(profile.SetLiveBranch)) return;
 
-        if (BuildScriptGenerator.IsDefaultBranch(profile.SetLiveBranch))
+        if (SteamBranch.IsDefault(profile.SetLiveBranch))
         {
             issues.Add(new ValidationIssue(IssueSeverity.Warning, "SetLive",
                 "Steam does not allow a build script to set the default branch live. " +
@@ -189,9 +190,7 @@ public static class BuildValidator
     private static void ValidateContentBuilder(BuildProfile profile, AppSettings? settings,
                                                List<ValidationIssue> issues)
     {
-        var path = !string.IsNullOrWhiteSpace(profile.ContentBuilderPathOverride)
-            ? profile.ContentBuilderPathOverride
-            : settings?.ContentBuilderPath ?? string.Empty;
+        var path = profile.ContentBuilderPath(settings);
 
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -200,7 +199,7 @@ public static class BuildValidator
             return;
         }
 
-        if (Steam.SteamCmdLocator.TryLocate(path, out _, out var error)) return;
+        if (SteamCmdLocator.TryLocate(path, out _, out var error)) return;
         issues.Add(new ValidationIssue(IssueSeverity.Error, "ContentBuilder", error));
     }
 
