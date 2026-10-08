@@ -305,16 +305,24 @@ previous one, code signing on Windows, and signing and notarisation on macOS.
 
 ## Releasing
 
-A release is cut by pushing a tag, and only by pushing a tag:
+A release is cut by pushing a tag, and only by pushing a tag — after its notes are written
+and committed:
 
 ```bash
-git tag v1.3.0
-git push origin v1.3.0
+git add docs/release-notes/v1.4.0.md
+git commit -m "Write the release notes for 1.4.0"
+git tag v1.4.0
+git push origin main v1.4.0
 ```
 
-`.github/workflows/release.yml` first runs the test suite and opens a **draft** release
-with notes generated from the commits since the previous tag; a red suite stops the run
-before a single asset is uploaded. Then four jobs — Windows and Linux on Ubuntu, both
+The notes in `docs/release-notes/<tag>.md` are for the people installing the release, not a
+commit log: what is new and how to use it, what improved, what was fixed, how to upgrade,
+which file to download, and what is known not to work. The previous release's file is the
+model. A tag without notes stops the workflow at its first step.
+
+`.github/workflows/release.yml` then runs the test suite and opens a **draft** release
+with those notes, followed by GitHub's generated list of changes since the previous tag;
+a red suite stops the run before a single asset is uploaded. Then four jobs — Windows and Linux on Ubuntu, both
 macOS architectures on a Mac — each publish a self-contained build with the tag's version
 stamped into it, package it with Velopack into the installer, the portable archive and
 the update packages, and add those to the draft. Each job fetches the previous release's

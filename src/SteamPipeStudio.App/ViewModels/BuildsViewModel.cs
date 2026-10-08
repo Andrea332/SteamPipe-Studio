@@ -290,7 +290,7 @@ public sealed class BuildsViewModel : ViewModelBase
         // Promoting to the default branch is the one irreversible-feeling action in the
         // app: it changes what every customer downloads. It always confirms, regardless
         // of the "confirm before set live" preference.
-        var isDefault = branch.Name.Equals("public", StringComparison.OrdinalIgnoreCase);
+        var isDefault = SteamBranch.IsDefault(branch.Name);
         if (isDefault || _settings().ConfirmSetLive)
         {
             var confirmed = await _confirm(

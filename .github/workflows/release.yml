@@ -36,6 +36,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Every release goes out with notes written for the people installing it —
+      # what is new, what changed, how to upgrade, what is known not to work — not
+      # just a list of commits. They live in docs/release-notes/<tag>.md, committed
+      # before the tag, and a tag without them stops here, before anything else runs.
+      - name: Check the release notes exist
+        run: |
+          notes="docs/release-notes/$GITHUB_REF_NAME.md"
+          if [ ! -s "$notes" ]; then
+            echo "::error file=$notes::No release notes for $GITHUB_REF_NAME. Write $notes, commit it, and push the tag again."
+            exit 1
+          fi
+
       # The SDK version is read from global.json instead of being repeated here.
       # Stating it in two places means the two drift, and the drift surfaces on a
       # release day rather than on an ordinary one.
@@ -46,14 +58,16 @@ jobs:
       - name: Test
         run: dotnet run --project src/SteamPipeStudio.Tests
 
-      # The notes are generated from the commits since the previous tag and deserve
-      # a read before anyone else gets them.
+      # The written notes come first; GitHub's generated list of changes since the
+      # previous tag is appended below them as the detailed record. Both deserve a
+      # read before anyone else gets them.
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
             --draft \
+            --notes-file "docs/release-notes/$GITHUB_REF_NAME.md" \
             --generate-notes \
             --title "SteamPipe Studio ${GITHUB_REF_NAME#v}"
 
