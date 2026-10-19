@@ -53,7 +53,7 @@
   <Window.Resources>
     <x:String x:Key="TipProjectName">Your name for this project, shown in the list on the left. Never sent to Steam.</x:String>
     <x:String x:Key="TipAppId">The App ID Steamworks assigned to your game. It is the number in the address of the app's pages in the Steamworks admin panel.</x:String>
-    <x:String x:Key="TipDescription">A note shown next to this build in the Steamworks admin panel and on the Builds tab, so builds can be told apart — the version number, for example.</x:String>
+    <x:String x:Key="TipDescription">Goes up with the next upload and is shown next to that build in the Steamworks admin panel and on the Builds tab, so builds can be told apart — the version number, for example. Players do not see it. It is saved with the project, so change it before each upload. One line, up to 250 characters.</x:String>
     <x:String x:Key="TipBuildFolder">The folder with the built game, exactly as players should get it: the executable and everything next to it. The depots on the Depots tab take their files from here, and Preview contents on the Upload tab shows what would be uploaded.</x:String>
     <x:String x:Key="TipUploadLogs">Where steamcmd's logs, the generated .vdf scripts and its chunk cache go. Keep it outside the app/game build folder, or they end up inside your game. Deleting it breaks nothing: the next upload is just slower.</x:String>
     <x:String x:Key="TipAccount">The Steam account steamcmd logs in with. It needs upload rights for this app in Steamworks.</x:String>
@@ -156,7 +156,7 @@
                         Grid.IsSharedSizeScope="True">
 
               <Border Classes="card">
-                <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
                     <ColumnDefinition Width="*" />
@@ -180,34 +180,25 @@
                            Watermark="The App ID assigned in Steamworks"
                            ToolTip.Tip="{StaticResource TipAppId}" />
 
-                  <StackPanel Grid.Row="2" Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipDescription}">
-                    <v:InfoIcon />
-                    <TextBlock Text="Build description" />
-                  </StackPanel>
-                  <TextBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,8"
-                           Text="{Binding Description, Mode=TwoWay}"
-                           Watermark="Shown next to the build in the Steamworks admin panel"
-                           ToolTip.Tip="{StaticResource TipDescription}" />
-
-                  <StackPanel Grid.Row="3" Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipBuildFolder}">
+                  <StackPanel Grid.Row="2" Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipBuildFolder}">
                     <v:InfoIcon />
                     <TextBlock Text="App/Game build folder" />
                   </StackPanel>
-                  <TextBox Grid.Row="3" Grid.Column="1" Margin="0,0,8,8"
+                  <TextBox Grid.Row="2" Grid.Column="1" Margin="0,0,8,8"
                            Text="{Binding ContentRoot, Mode=TwoWay}"
                            ToolTip.Tip="{StaticResource TipBuildFolder}" />
-                  <Button Grid.Row="3" Grid.Column="2" Content="Browse…" Margin="0,0,0,8"
+                  <Button Grid.Row="2" Grid.Column="2" Content="Browse…" Margin="0,0,0,8"
                           Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).BrowseContentRootCommand}"
                           ToolTip.Tip="{StaticResource TipBrowse}" />
 
-                  <StackPanel Grid.Row="4" Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipUploadLogs}">
+                  <StackPanel Grid.Row="3" Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipUploadLogs}">
                     <v:InfoIcon />
                     <TextBlock Text="Upload logs/VDF folder" />
                   </StackPanel>
-                  <TextBox Grid.Row="4" Grid.Column="1" Margin="0,0,8,0"
+                  <TextBox Grid.Row="3" Grid.Column="1" Margin="0,0,8,0"
                            Text="{Binding BuildOutput, Mode=TwoWay}"
                            ToolTip.Tip="{StaticResource TipUploadLogs}" />
-                  <Button Grid.Row="4" Grid.Column="2" Content="Browse…"
+                  <Button Grid.Row="3" Grid.Column="2" Content="Browse…"
                           Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).BrowseBuildOutputCommand}"
                           ToolTip.Tip="{StaticResource TipBrowse}" />
 
@@ -215,7 +206,7 @@
               </Border>
 
               <Border Classes="card">
-                <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+                <Grid RowDefinitions="Auto,Auto,Auto">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
                     <ColumnDefinition Width="*" />
@@ -252,7 +243,7 @@
                        is saved, red when not, and next to it the outcome of Check or what
                        stopped the last Save. Full opacity, unlike other hints, so the
                        colour reads. -->
-                  <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="0,0,0,8">
+                  <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="6">
                     <TextBlock Classes="hint" Opacity="1" Text="{Binding PasswordState}"
                                Classes.ok="{Binding HasStoredPassword}"
                                Classes.error="{Binding !HasStoredPassword}" />
@@ -261,26 +252,6 @@
                                Classes.error="{Binding PasswordStatusIsBad}"
                                Classes.warn="{Binding PasswordStatusIsWarning}"
                                IsVisible="{Binding PasswordStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                  </StackPanel>
-
-                  <StackPanel Grid.Row="3" Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipSetLive}">
-                    <v:InfoIcon />
-                    <TextBlock Text="Set live on branch" />
-                  </StackPanel>
-                  <TextBox Grid.Row="3" Grid.Column="1" Margin="0,0,0,12"
-                           Text="{Binding SetLiveBranch, Mode=TwoWay}"
-                           Watermark="Leave empty to upload without publishing"
-                           ToolTip.Tip="{StaticResource TipSetLive}" />
-
-                  <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Spacing="20">
-                    <StackPanel Classes="labelled" Margin="0" ToolTip.Tip="{StaticResource TipPreview}">
-                      <v:InfoIcon />
-                      <CheckBox Content="Preview build (upload nothing)" IsChecked="{Binding Preview, Mode=TwoWay}" />
-                    </StackPanel>
-                    <StackPanel Classes="labelled" Margin="0" ToolTip.Tip="{StaticResource TipVerbose}">
-                      <v:InfoIcon />
-                      <CheckBox Content="Verbose steamcmd output" IsChecked="{Binding Verbose, Mode=TwoWay}" />
-                    </StackPanel>
                   </StackPanel>
 
                 </Grid>
@@ -472,6 +443,44 @@
           <DockPanel Margin="4,12,12,12" DataContext="{Binding Upload}" x:DataType="vm:UploadViewModel">
 
             <StackPanel DockPanel.Dock="Top" Spacing="10">
+
+              <!-- What this upload is and how it runs, set just before pressing Upload. Still
+                   the project's fields, saved with it like every other one. -->
+              <Border Classes="card" Margin="0" x:DataType="vm:ProfileViewModel"
+                      DataContext="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SelectedProfile}">
+                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
+
+                  <StackPanel Grid.Row="0" Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipDescription}">
+                    <v:InfoIcon />
+                    <TextBlock Text="Build description" />
+                  </StackPanel>
+                  <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" MaxLength="250"
+                           Text="{Binding Description, Mode=TwoWay}"
+                           Watermark="What this build is — the version number, for example"
+                           ToolTip.Tip="{StaticResource TipDescription}" />
+
+                  <StackPanel Grid.Row="1" Grid.Column="0" Classes="labelled" ToolTip.Tip="{StaticResource TipSetLive}">
+                    <v:InfoIcon />
+                    <TextBlock Text="Set live on branch" />
+                  </StackPanel>
+                  <TextBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,12"
+                           Text="{Binding SetLiveBranch, Mode=TwoWay}"
+                           Watermark="Leave empty to upload without publishing"
+                           ToolTip.Tip="{StaticResource TipSetLive}" />
+
+                  <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="20">
+                    <StackPanel Classes="labelled" Margin="0" ToolTip.Tip="{StaticResource TipPreview}">
+                      <v:InfoIcon />
+                      <CheckBox Content="Preview build (upload nothing)" IsChecked="{Binding Preview, Mode=TwoWay}" />
+                    </StackPanel>
+                    <StackPanel Classes="labelled" Margin="0" ToolTip.Tip="{StaticResource TipVerbose}">
+                      <v:InfoIcon />
+                      <CheckBox Content="Verbose steamcmd output" IsChecked="{Binding Verbose, Mode=TwoWay}" />
+                    </StackPanel>
+                  </StackPanel>
+
+                </Grid>
+              </Border>
 
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <Button Content="Preview contents" Command="{Binding PreflightCommand}"
