@@ -18,6 +18,8 @@ public enum SteamCmdEventKind
     Progress,
     BuildSucceeded,
     BuildFailed,
+    /// <summary>An upload failed in a way worth one more try, which is about to start.</summary>
+    Retrying,
     /// <summary>An <c>app_update</c> state line; <c>Detail</c> is the state name.</summary>
     Downloading,
     DownloadSucceeded,
@@ -70,8 +72,23 @@ public static partial class SteamCmdOutputParser
     [GeneratedRegex(@"\bbuild\s*id\b\D{0,4}(?<build>\d{4,})", Options)]
     private static partial Regex BuildIdOnly { get; }
 
-    [GeneratedRegex(@"(?:ERROR!\s*)?Failed\s+to\s+(?:build|upload|commit)|AppID\s+\d+\s+build\s+failed", Options)]
+    // "ERROR! Build for depot 4370991 failed : Failure" ends with steamcmd's own reason,
+    // and "failed : Failure" also reads as a login failure to LoginFailed below; matched
+    // here, ahead of it, the line is reported as what it is.
+    [GeneratedRegex(@"(?:ERROR!\s*)?Failed\s+to\s+(?:build|upload|commit)|AppID\s+\d+\s+build\s+failed|Build\s+for\s+depot\s+\d+\s+failed", Options)]
     private static partial Regex BuildFailed { get; }
+
+    // The one failure seen to clear up on a second try: Steam's upload server not
+    // answering the first request of a build. Everything else — a refused login, a
+    // rejected depot, a broken script — would only fail again.
+    [GeneratedRegex(@"Timeout\s+uploading\s+manifest", Options)]
+    private static partial Regex TransientUploadFailure { get; }
+
+    // steamcmd stamps its build messages "[2026-10-20 16:22:21]: …" — the colon is what
+    // tells them from the console log's own stamp. Errors raised while building carry it,
+    // so it has to go before a pattern anchored on ERROR can see them.
+    [GeneratedRegex(@"^\[\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}\]:\s*", Options)]
+    private static partial Regex BuildMessageStamp { get; }
 
     [GeneratedRegex(@"FAILED\s*(?:login)?\s*(?:with\s+result\s+code)?\s*[:(]?\s*(?<reason>[A-Za-z ]+)", Options)]
     private static partial Regex LoginFailed { get; }
@@ -170,10 +187,21 @@ public static partial class SteamCmdOutputParser
     /// </summary>
     public static string StripLogTimestamp(string line) => LogTimestamp.Replace(line.Trim(), string.Empty);
 
+    /// <summary>
+    /// Whether a failed upload is worth running again as it is: true only for the reason
+    /// a second attempt has been seen to fix, Steam's upload server timing out.
+    /// </summary>
+    public static bool IsTransientUploadFailure(string? failureDetail) =>
+        failureDetail is not null && TransientUploadFailure.IsMatch(failureDetail);
+
     public static SteamCmdEvent Parse(string line)
     {
         var trimmed = StripLogTimestamp(line);
         if (trimmed.Length == 0) return new SteamCmdEvent(SteamCmdEventKind.Raw, line);
+
+        // The message without steamcmd's build stamp: what failure patterns are matched
+        // against, and what the user is shown as the reason.
+        var message = BuildMessageStamp.Replace(trimmed, string.Empty);
 
         var success = BuildSucceeded.Match(trimmed);
         if (success.Success)
@@ -185,8 +213,8 @@ public static partial class SteamCmdOutputParser
                 BuildId: finished.Success ? ParseUInt(finished.Groups["build"].Value) : null);
         }
 
-        if (BuildFailed.IsMatch(trimmed))
-            return new SteamCmdEvent(SteamCmdEventKind.BuildFailed, line, Detail: trimmed);
+        if (BuildFailed.IsMatch(message))
+            return new SteamCmdEvent(SteamCmdEventKind.BuildFailed, line, Detail: message);
 
         // The app_update lines go before the login patterns on purpose: "Failed to
         // install app" would otherwise be claimed by the generic FAILED matcher below and
@@ -270,8 +298,8 @@ public static partial class SteamCmdOutputParser
                 DepotId: ParseUInt(committed.Groups["depot"].Value)
                          ?? ParseUInt(committed.Groups["depot2"].Value));
 
-        if (GenericError.IsMatch(trimmed))
-            return new SteamCmdEvent(SteamCmdEventKind.Error, line, Detail: trimmed);
+        if (GenericError.IsMatch(message))
+            return new SteamCmdEvent(SteamCmdEventKind.Error, line, Detail: message);
 
         var buildId = BuildIdOnly.Match(trimmed);
         if (buildId.Success)

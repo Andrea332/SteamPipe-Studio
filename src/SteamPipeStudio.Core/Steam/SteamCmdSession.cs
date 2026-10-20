@@ -10,12 +10,14 @@ using SteamPipeStudio.Core.Model;
 
 namespace SteamPipeStudio.Core.Steam;
 
+/// <param name="Attempts">How many times steamcmd ran; more than one after Steam's upload server timed out.</param>
 public sealed record UploadOutcome(
     bool Succeeded,
     uint? BuildId,
     string? FailureDetail,
     string AppScriptPath,
-    string? BuildLogPath);
+    string? BuildLogPath,
+    int Attempts = 1);
 
 /// <summary>
 /// Whose depots <c>app_update</c> fetches. <see cref="Host"/> leaves the choice to
@@ -142,8 +144,6 @@ public sealed class SteamCmdSession
 
         await WarmUpAsync(steamCmd, cancellation).ConfigureAwait(false);
 
-        var runner = CreateRunner();
-
         // steamcmd resolves +run_app_build relative to its own working directory, which
         // the runner sets to the builder folder. Passing an absolute path removes the
         // ambiguity entirely and lets scripts live wherever the project wants them.
@@ -154,15 +154,53 @@ public sealed class SteamCmdSession
             "+quit"
         };
 
-        var result = await runner.RunAsync(steamCmd, arguments, cancellation).ConfigureAwait(false);
+        // Steam creates a build only once every depot's manifest is in, so a failed run
+        // leaves nothing behind and the same script can simply run again; depots that did
+        // go up are reused, not uploaded twice.
+        SteamCmdResult result;
+        var attempts = 0;
+        while (true)
+        {
+            result = await CreateRunner().RunAsync(steamCmd, arguments, cancellation).ConfigureAwait(false);
+            attempts++;
+
+            if (!ShouldRetryUpload(result.Succeeded, result.FailureDetail, attempts)) break;
+
+            Output?.Invoke(new SteamCmdEvent(SteamCmdEventKind.Retrying,
+                $"Steam's upload server did not answer in time ({result.FailureDetail}). Nothing was " +
+                $"created on Steam, so the upload starts again in {RetryPause.TotalSeconds:0} seconds " +
+                $"(attempt {attempts + 1} of {UploadAttempts}).",
+                Detail: "Steam did not answer in time; trying again…"));
+
+            await Task.Delay(RetryPause, cancellation).ConfigureAwait(false);
+        }
 
         return new UploadOutcome(
             result.Succeeded,
             result.BuildId,
             result.FailureDetail ?? (result.Succeeded ? null : DescribeExit(result.ExitCode)),
             appScriptPath,
-            FindLatestBuildLog(profile.BuildOutput));
+            FindLatestBuildLog(profile.BuildOutput),
+            attempts);
     }
+
+    /// <summary>
+    /// How many times one Upload runs steamcmd at most. The second run is there for
+    /// Steam's upload server timing out on the first request of a build, which happens on
+    /// some connections and, every time it has been seen, cleared up on the next try.
+    /// </summary>
+    public const int UploadAttempts = 2;
+
+    /// <summary>
+    /// A pause before trying again, close to what a person pressing Upload a second time
+    /// takes; an immediate retry would meet the same cold connection.
+    /// </summary>
+    private static readonly TimeSpan RetryPause = TimeSpan.FromSeconds(10);
+
+    /// <summary>Whether an upload that ended this way is run again.</summary>
+    public static bool ShouldRetryUpload(bool succeeded, string? failureDetail, int attemptsMade) =>
+        !succeeded && attemptsMade < UploadAttempts &&
+        SteamCmdOutputParser.IsTransientUploadFailure(failureDetail);
 
     /// <summary>
     /// Downloads the build that is live on a branch into a folder, with

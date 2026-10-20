@@ -27,7 +27,8 @@ public sealed class LogLineViewModel
 
     public bool IsError => Kind is SteamCmdEventKind.Error or SteamCmdEventKind.BuildFailed
                                 or SteamCmdEventKind.LoginFailed or SteamCmdEventKind.DownloadFailed;
-    public bool IsWarning => Kind is SteamCmdEventKind.SteamGuardPrompt or SteamCmdEventKind.LoginPrompt;
+    public bool IsWarning => Kind is SteamCmdEventKind.SteamGuardPrompt or SteamCmdEventKind.LoginPrompt
+                                  or SteamCmdEventKind.Retrying;
     public bool IsSuccess => Kind is SteamCmdEventKind.BuildSucceeded or SteamCmdEventKind.LoginSucceeded
                                   or SteamCmdEventKind.DownloadSucceeded;
     public bool IsMuted => Kind is SteamCmdEventKind.Raw or SteamCmdEventKind.Bootstrap;
@@ -233,10 +234,17 @@ public sealed class UploadViewModel : ViewModelBase
 
                 Progress = 100;
                 IsIndeterminate = false;
-                Status = outcome.BuildId is null
-                    ? "Build finished."
-                    : $"Build {outcome.BuildId} uploaded successfully.";
+                Status = (outcome.BuildId is null
+                             ? "Build finished"
+                             : $"Build {outcome.BuildId} uploaded successfully") +
+                         (outcome.Attempts > 1 ? $", on attempt {outcome.Attempts}." : ".");
                 Append(Status, SteamCmdEventKind.BuildSucceeded);
+            }
+            else if (SteamCmdOutputParser.IsTransientUploadFailure(outcome.FailureDetail))
+            {
+                Fail($"Steam's upload server did not answer in time, {outcome.Attempts} times " +
+                     $"({outcome.FailureDetail}). Nothing was created on Steam: press Upload build " +
+                     "to try again, or check the connection if it keeps happening.");
             }
             else
             {
@@ -436,6 +444,14 @@ public sealed class UploadViewModel : ViewModelBase
                     break;
                 case SteamCmdEventKind.LoginSucceeded:
                     Phase = "Signed in.";
+                    break;
+                // The run starts over, so the bar does too.
+                case SteamCmdEventKind.Retrying:
+                    Phase = evt.Detail ?? "Trying again…";
+                    Status = Phase;
+                    Progress = 0;
+                    IsIndeterminate = true;
+                    _currentDepot = null;
                     break;
                 // Each depot is scanned and then uploaded, and steamcmd counts both from
                 // 0 to 100 — " 96.3MB (96%)" at the end of the scan, " 10.0MB (11%)" a

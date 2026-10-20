@@ -60,6 +60,11 @@ Not affiliated with or endorsed by Valve.
   hung (see the notes below). A rejected login reports its reason, `Invalid Password`,
   instead of a bare exit code 5. *Copy log*, Ctrl+C or the context menu put the whole
   panel, or just the selected lines, on the clipboard for a bug report.
+- **Tries again when Steam does not answer.** On some connections Steam's upload server
+  lets the first request of a build time out, and `steamcmd` gives up with `Timeout
+  uploading manifest`. Nothing is created on Steam when that happens, so the upload
+  starts again by itself, once, ten seconds later. Any other failure is reported straight
+  away.
 - **Exports itself to CI.** *Export GitHub Actions workflow* writes a workflow that
   performs the same upload with the paths rewritten for a runner. A tool that can only
   be driven by clicking is a tool a team eventually has to replace.

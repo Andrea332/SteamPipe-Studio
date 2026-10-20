@@ -81,6 +81,7 @@ internal static class Program
         Validation();
         Preflight();
         OutputParsing();
+        UploadRetry();
         Download();
         CiExport();
         Locator();
@@ -621,6 +622,53 @@ internal static class Program
         Harness.Check("ownership explained",
             notOwned.Detail?.Contains("does not own", StringComparison.OrdinalIgnoreCase) == true,
             notOwned.Detail);
+
+        // steamcmd stamps its build messages "[time]: ", so a build-stage error does not
+        // start with ERROR. These are the lines of a real failed upload (SDK 1.65), from
+        // the pipe and from the console log, which adds a stamp of its own in front.
+        const string manifestTimeout = "ERROR! Timeout uploading manifest (size 58468)";
+        foreach (var (channel, line) in new[]
+                 {
+                     ("pipe", "[2026-10-20 16:22:21]: " + manifestTimeout),
+                     ("console log", "[2026-10-20 16:22:21] [2026-10-20 16:22:21]: " + manifestTimeout)
+                 })
+        {
+            var timeout = SteamCmdOutputParser.Parse(line);
+            Harness.Equal($"stamped build error is an error ({channel})", SteamCmdEventKind.Error, timeout.Kind);
+            Harness.Equal($"its reason loses the stamp ({channel})", manifestTimeout, timeout.Detail);
+        }
+
+        var depotFailed = SteamCmdOutputParser.Parse("[2026-10-20 16:22:21]: ERROR! Build for depot 4370991 failed : Failure");
+        Harness.Equal("failed depot fails the build", SteamCmdEventKind.BuildFailed, depotFailed.Kind);
+
+        // A stamp that is not followed by an error stays chatter.
+        Harness.Equal("stamped progress is not an error", SteamCmdEventKind.Raw,
+            SteamCmdOutputParser.Parse("[2026-10-20 16:21:55]: Building file listing for depot 4370991 ...").Kind);
+    }
+
+    private static void UploadRetry()
+    {
+        Console.WriteLine("== upload retry ==");
+
+        const string timeout = "ERROR! Timeout uploading manifest (size 58468)";
+
+        Harness.Check("a manifest timeout is worth another try",
+            SteamCmdOutputParser.IsTransientUploadFailure(timeout));
+        Harness.Check("a wrong password is not",
+            !SteamCmdOutputParser.IsTransientUploadFailure("Invalid Password"));
+        Harness.Check("a refused depot is not",
+            !SteamCmdOutputParser.IsTransientUploadFailure("ERROR! Failed to commit build for AppID 480 : Access Denied"));
+        Harness.Check("no reason is not",
+            !SteamCmdOutputParser.IsTransientUploadFailure(null));
+
+        Harness.Check("first timeout: try again",
+            SteamCmdSession.ShouldRetryUpload(succeeded: false, timeout, attemptsMade: 1));
+        Harness.Check("second timeout: stop and report it",
+            !SteamCmdSession.ShouldRetryUpload(succeeded: false, timeout, attemptsMade: SteamCmdSession.UploadAttempts));
+        Harness.Check("a finished build is never repeated",
+            !SteamCmdSession.ShouldRetryUpload(succeeded: true, timeout, attemptsMade: 1));
+        Harness.Check("any other failure is reported at once",
+            !SteamCmdSession.ShouldRetryUpload(succeeded: false, "Invalid Password", attemptsMade: 1));
     }
 
     private static void Download()
