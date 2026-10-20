@@ -88,6 +88,7 @@ internal static class Program
         ConsoleLogDeduplication();
         Secrets();
         PortableStore();
+        LastProject();
         PasswordChecks();
         return Harness.Report();
     }
@@ -931,6 +932,32 @@ internal static class Program
                                              passwordAsks: 1, passwordProvided: true);
         Harness.Equal("other failures keep steamcmd's reason", PasswordCheckVerdict.Failed, limited.Verdict);
         Harness.Equal("the reason is the message", "Rate Limit Exceeded", limited.Message);
+    }
+
+    private static void LastProject()
+    {
+        Console.WriteLine("== last open project ==");
+
+        var root = Path.Combine(Path.GetTempPath(), "sps-last-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new ProfileStore(root);
+            Harness.Equal("no project remembered at first", null, store.LoadSettings().LastProjectId);
+
+            var project = Guid.NewGuid();
+            store.SaveSettings(new AppSettings { LastProjectId = project });
+            Harness.Equal("the open project survives a restart", project, store.LoadSettings().LastProjectId);
+
+            // A settings file written by 1.4.2 or earlier has no such entry.
+            File.WriteAllText(store.SettingsPath, "{ \"DarkTheme\": false }");
+            var older = store.LoadSettings();
+            Harness.Equal("an older settings file still loads", false, older.DarkTheme);
+            Harness.Equal("and remembers no project", null, older.LastProjectId);
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch (IOException) { }
+        }
     }
 
     private static void PortableStore()

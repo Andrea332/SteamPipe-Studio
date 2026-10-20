@@ -31,6 +31,9 @@ public sealed class AppSettings
     /// update is installed when the user says so, never in the middle of an upload.
     /// </summary>
     public bool CheckForUpdatesAtStartup { get; set; } = true;
+
+    /// <summary>The project open when the app last closed, opened again when it starts.</summary>
+    public Guid? LastProjectId { get; set; }
 }
 
 /// <summary>

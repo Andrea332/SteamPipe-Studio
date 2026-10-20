@@ -22,6 +22,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private ProfileViewModel? _selectedProfile;
     private bool _isSettingsOpen;
+    private ProfileViewModel? _projectBeforeSettings;
     private string _status = "Ready.";
 
     /// <param name="secrets">
@@ -118,7 +119,9 @@ public sealed class MainWindowViewModel : ViewModelBase
             CheckPasswordCommand.RaiseCanExecuteChanged();
         };
 
-        SelectedProfile = Profiles.FirstOrDefault();
+        // The project open when the app was closed, or the first one if that is gone.
+        SelectedProfile = Profiles.FirstOrDefault(p => p.Model.Id == _settings.LastProjectId)
+                          ?? Profiles.FirstOrDefault();
     }
 
     public ObservableCollection<ProfileViewModel> Profiles { get; }
@@ -146,16 +149,32 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     /// <summary>
     /// Settings are the app's, not a project's, so they open from the sidebar in place of
-    /// the project tabs — also when there is no project — and close when a project is
-    /// picked.
+    /// the project tabs, also when there is no project. Opening them deselects the project,
+    /// so that clicking any project in the list, the same one included, goes back to it;
+    /// closing them with the button reopens the project that was open.
     /// </summary>
     public bool IsSettingsOpen
     {
         get => _isSettingsOpen;
         set
         {
-            if (SetProperty(ref _isSettingsOpen, value))
-                RaiseAll(nameof(ShowProjectTabs), nameof(ShowEmptyState));
+            if (!SetProperty(ref _isSettingsOpen, value)) return;
+
+            if (value)
+            {
+                _projectBeforeSettings = SelectedProfile;
+                SelectedProfile = null;
+            }
+            else
+            {
+                // Null when a project picked in the list closed them: that one stays open.
+                if (SelectedProfile is null && _projectBeforeSettings is { } previous &&
+                    Profiles.Contains(previous))
+                    SelectedProfile = previous;
+                _projectBeforeSettings = null;
+            }
+
+            RaiseAll(nameof(ShowProjectTabs), nameof(ShowEmptyState));
         }
     }
 
@@ -187,7 +206,12 @@ public sealed class MainWindowViewModel : ViewModelBase
 
             OnPropertyChanged(nameof(HasProfile));
             RaiseAll(nameof(ShowProjectTabs), nameof(ShowEmptyState));
-            if (value is not null) IsSettingsOpen = false;
+            if (value is not null)
+            {
+                IsSettingsOpen = false;
+                // Written to disk with the other settings when the window closes.
+                _settings.LastProjectId = value.Model.Id;
+            }
             DuplicateProfileCommand.RaiseCanExecuteChanged();
             DeleteProfileCommand.RaiseCanExecuteChanged();
             SaveProfileCommand.RaiseCanExecuteChanged();

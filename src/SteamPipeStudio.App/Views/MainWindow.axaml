@@ -101,7 +101,7 @@
           <Border Height="1" Background="{DynamicResource InfoIconBrush}" Opacity="0.35" />
           <ToggleButton Content="Settings" IsChecked="{Binding IsSettingsOpen, Mode=TwoWay}"
                         HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                        ToolTip.Tip="The app's own settings, the same for every project: the Steamworks SDK, the publisher Web API key, the theme and updates. Click a project to go back to it." />
+                        ToolTip.Tip="The app's own settings, the same for every project: the Steamworks SDK, the publisher Web API key, the theme and updates. Click Settings again or Close to go back to the project that was open, or click any project in the list to open that one." />
         </StackPanel>
 
         <!-- Under the list they act on, and only enabled while a project is selected. -->
@@ -118,8 +118,7 @@
 
         <ListBox ItemsSource="{Binding Profiles}"
                  SelectedItem="{Binding SelectedProfile, Mode=TwoWay}"
-                 Background="Transparent"
-                 Tapped="OnProjectTapped">
+                 Background="Transparent">
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="vm:ProfileViewModel">
               <StackPanel Spacing="2" Margin="0,4">
@@ -707,7 +706,7 @@
           <TextBlock Grid.Column="0" Text="Settings" FontSize="24" VerticalAlignment="Center" />
           <Button Grid.Column="1" Content="Close" Command="{Binding CloseSettingsCommand}"
                   VerticalAlignment="Center"
-                  ToolTip.Tip="Back to the selected project. Clicking a project in the list does the same." />
+                  ToolTip.Tip="Back to the project that was open. Clicking a project in the list opens that one instead." />
         </Grid>
 
         <ScrollViewer>
