@@ -486,14 +486,8 @@
                         ToolTip.Tip="Resolves the file mappings against the disk and shows what would be uploaded, with warnings for mappings that match nothing and debug files about to ship. Uploads nothing." />
                 <Button Content="Upload build" Command="{Binding UploadCommand}" Classes="accent"
                         ToolTip.Tip="Generates the build scripts and runs steamcmd to upload this build to Steam. Problems in the project are listed below, and the ones marked as errors block the upload." />
-                <Button Content="Cancel" Command="{Binding CancelCommand}"
+                <Button Content="Cancel" Command="{Binding CancelCommand}" Classes="danger"
                         ToolTip.Tip="Stops steamcmd and whatever it is doing: an upload, a download or a password check." />
-                <Button Content="Open build log" Command="{Binding OpenLogCommand}"
-                        ToolTip.Tip="Opens the newest steamcmd log file in the upload logs/VDF folder. Available after an upload." />
-                <Button Content="Copy log" Command="{Binding CopyLogCommand}"
-                        ToolTip.Tip="Copies the whole panel below. Select lines and press Ctrl+C to copy only those." />
-                <Button Content="Clear log" Command="{Binding ClearLogCommand}"
-                        ToolTip.Tip="Empties the panel below. Log files on disk are kept." />
               </StackPanel>
 
               <ItemsControl ItemsSource="{Binding Issues}">
@@ -553,6 +547,17 @@
                 <TextBlock Text="{Binding Phase}" Classes="hint" />
               </StackPanel>
 
+            </StackPanel>
+
+            <!-- Under the panel they act on. Docked before it, so the panel fills what is
+                 left between the two. -->
+            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+              <Button Content="Open build log" Command="{Binding OpenLogCommand}"
+                      ToolTip.Tip="Opens the newest steamcmd log file in the upload logs/VDF folder. Available after an upload." />
+              <Button Content="Copy log" Command="{Binding CopyLogCommand}"
+                      ToolTip.Tip="Copies the whole panel above. Select lines and press Ctrl+C to copy only those." />
+              <Button Content="Clear log" Command="{Binding ClearLogCommand}"
+                      ToolTip.Tip="Empties the panel above. Log files on disk are kept." />
             </StackPanel>
 
             <!-- A ListBox, not an ItemsControl: it virtualises. An ItemsControl inside a

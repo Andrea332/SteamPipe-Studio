@@ -75,6 +75,23 @@
     <Style Selector="v|InfoIcon:pointerover /template/ TextBlock#Letter">
       <Setter Property="Foreground" Value="{DynamicResource Accent}" />
     </Style>
+
+    <!-- A button that stops something: red while it can be pressed, the usual grey while
+         it cannot, so it only draws the eye when there is something to stop. Hover and
+         press are set on the template's presenter, where the Fluent theme sets them;
+         a value on the button itself would lose to the theme there. -->
+    <Style Selector="Button.danger:not(:disabled)">
+      <Setter Property="Background" Value="{DynamicResource DangerBackground}" />
+      <Setter Property="Foreground" Value="{DynamicResource DangerForeground}" />
+    </Style>
+    <Style Selector="Button.danger:not(:disabled):pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource DangerBackgroundPointerOver}" />
+      <Setter Property="Foreground" Value="{DynamicResource DangerForeground}" />
+    </Style>
+    <Style Selector="Button.danger:not(:disabled):pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource DangerBackgroundPressed}" />
+      <Setter Property="Foreground" Value="{DynamicResource DangerForeground}" />
+    </Style>
   </Application.Styles>
 
   <Application.Resources>
@@ -94,6 +111,10 @@
           <SolidColorBrush x:Key="LogMuted" Color="#6E7681" />
           <SolidColorBrush x:Key="Accent" Color="#4C8EDA" />
           <SolidColorBrush x:Key="InfoIconBrush" Color="#8B949E" />
+          <SolidColorBrush x:Key="DangerBackground" Color="#DA3633" />
+          <SolidColorBrush x:Key="DangerBackgroundPointerOver" Color="#E5534B" />
+          <SolidColorBrush x:Key="DangerBackgroundPressed" Color="#B62324" />
+          <SolidColorBrush x:Key="DangerForeground" Color="#FFFFFF" />
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="Dark">
@@ -106,6 +127,10 @@
           <SolidColorBrush x:Key="LogMuted" Color="#6E7681" />
           <SolidColorBrush x:Key="Accent" Color="#4C8EDA" />
           <SolidColorBrush x:Key="InfoIconBrush" Color="#8B949E" />
+          <SolidColorBrush x:Key="DangerBackground" Color="#DA3633" />
+          <SolidColorBrush x:Key="DangerBackgroundPointerOver" Color="#E5534B" />
+          <SolidColorBrush x:Key="DangerBackgroundPressed" Color="#B62324" />
+          <SolidColorBrush x:Key="DangerForeground" Color="#FFFFFF" />
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="Light">
@@ -118,6 +143,10 @@
           <SolidColorBrush x:Key="LogMuted" Color="#6E7781" />
           <SolidColorBrush x:Key="Accent" Color="#2A6FBF" />
           <SolidColorBrush x:Key="InfoIconBrush" Color="#57606A" />
+          <SolidColorBrush x:Key="DangerBackground" Color="#CF222E" />
+          <SolidColorBrush x:Key="DangerBackgroundPointerOver" Color="#B62324" />
+          <SolidColorBrush x:Key="DangerBackgroundPressed" Color="#A40E26" />
+          <SolidColorBrush x:Key="DangerForeground" Color="#FFFFFF" />
         </ResourceDictionary>
 
       </ResourceDictionary.ThemeDictionaries>
